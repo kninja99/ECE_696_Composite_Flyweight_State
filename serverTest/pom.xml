@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>edu.arizona.ece696</groupId>
+    <artifactId>echo-server-strategies</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <name>Echo Server Concurrency Strategies</name>
+    <description>
+        Dr. Donahoo's TCP echo server, reworked onto java.util.concurrent
+        ExecutorService under three concurrency strategies (single-threaded,
+        thread-per-connection, thread-pool). A shared EchoProtocol adds a 100 ms
+        per-connection overhead on messages of 4+ bytes so the strategies can be
+        load-tested with Apache JMeter and compared with JFreeChart graphs.
+        ECE 696 assignment.
+    </description>
+
+    <properties>
+        <!-- Compiled to Java 17 bytecode (an LTS) for broad Eclipse/JDK
+             compatibility; builds fine on the installed JDK 26. -->
+        <maven.compiler.release>17</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <junit.version>5.10.2</junit.version>
+        <surefire.version>3.2.5</surefire.version>
+        <jfreechart.version>1.5.4</jfreechart.version>
+        <exec.version>3.2.0</exec.version>
+    </properties>
+
+    <dependencies>
+        <!-- JFreeChart renders the throughput/latency comparison PNGs. m2e
+             resolves it on first Eclipse build (needs internet once), exactly
+             like JUnit in the sibling Composite project. -->
+        <dependency>
+            <groupId>org.jfree</groupId>
+            <artifactId>jfreechart</artifactId>
+            <version>${jfreechart.version}</version>
+        </dependency>
+
+        <!-- JUnit 5 (Jupiter) aggregator: API + params + engine. -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Surefire 3.x is required to discover and run JUnit 5 tests. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>${surefire.version}</version>
+            </plugin>
+
+            <!-- Run any main from the command line without extra classpath work, e.g.:
+                   mvn compile exec:java -Dexec.mainClass=edu.arizona.ece696.echo.SingleThreadEchoServer -Dexec.arguments=5000
+                   mvn compile exec:java -Dexec.mainClass=edu.arizona.ece696.echo.ChartGenerator -Dexec.arguments=results -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>${exec.version}</version>
+                <configuration>
+                    <mainClass>edu.arizona.ece696.echo.ChartGenerator</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
