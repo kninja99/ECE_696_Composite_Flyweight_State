@@ -7,6 +7,10 @@ package edu.arizona.ece696.ast.parser;
 public enum TokenType {
     /** A numeric literal, e.g. {@code 42} or {@code 3.14}. */
     NUMBER,
+    /** An identifier, e.g. a function name like {@code sqrt}. */
+    IDENT,
+    /** An argument separator {@code ,} inside a function call. */
+    COMMA,
     /** The {@code +} operator. */
     PLUS,
     /** The {@code -} operator (binary subtraction or unary minus). */

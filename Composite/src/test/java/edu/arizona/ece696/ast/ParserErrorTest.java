@@ -30,7 +30,13 @@ class ParserErrorTest {
             "2 & 3",       // unknown character
             "()",          // empty parentheses
             "3.1.4",       // malformed number
-            "/2"           // leading '/'
+            "/2",          // leading '/'
+            "foo(3)",      // unknown function
+            "sqrt()",      // too few arguments (expects 1)
+            "sqrt(2,3)",   // too many arguments (expects 1)
+            "pow(2)",      // too few arguments (expects 2)
+            "sqrt 4",      // function name without parentheses
+            "sqrt(4"       // unbalanced parenthesis after function
     })
     @DisplayName("throws ParseException on malformed input")
     void rejectsMalformedInput(String bad) {

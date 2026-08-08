@@ -5,7 +5,8 @@ package edu.arizona.ece696.ast;
  *
  * <p>The operation uses Java's built-in {@code double} remainder operator, which
  * is the truncated (fmod-style) remainder&mdash;the result takes the sign of the
- * dividend&mdash;not {@link Math#IEEEremainder(double, double)}.</p>
+ * dividend&mdash;not {@link Math#IEEEremainder(double, double)}. A zero divisor
+ * follows IEEE-754 semantics and yields {@code NaN} rather than throwing.</p>
  */
 public final class ModuloExpression extends BinaryExpression {
 

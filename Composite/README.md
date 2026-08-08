@@ -21,14 +21,21 @@ expression := term      (('+' | '-') term)*
 term       := factor    (('*' | '/' | '%') factor)*
 factor     := '-' factor | power
 power      := primary    ('^' factor)?        // right-associative
-primary    := NUMBER | '(' expression ')'
+primary    := NUMBER | function | '(' expression ')'
+function   := IDENT '(' (expression (',' expression)*)? ')'
 ```
 
 * Operators: `+  -  *  /  %  ^`, parentheses, and unary minus.
 * `^` is **right-associative** and binds tighter than unary minus, so
   `-3^2 = -9`, `2^3^2 = 512`, and `2^-1 = 0.5`.
-* All arithmetic is `double`. Division by zero follows IEEE-754 (`Infinity`/`NaN`),
-  and `%` is Java's truncated remainder.
+* **Math functions** (arguments are full expressions):
+  * unary: `sqrt`, `abs`, `sin`, `cos`, `tan`, `exp`, `ln`, `log10`
+  * binary: `pow`, `max`, `min`, `hypot`
+  * e.g. `sqrt(pow(3,2) + pow(4,2)) = 5`. Function names are case-insensitive.
+* All arithmetic is `double`, and `%` is Java's truncated remainder.
+* **Divide (or modulo) by zero follows IEEE-754**: it silently yields a signed
+  `Infinity` (or `NaN` for `0/0` and `x % 0`) rather than throwing. See
+  `DivideByZeroTest` and the special-value rows in the oracle CSV.
 
 ## Composite pattern roles
 
@@ -38,6 +45,7 @@ primary    := NUMBER | '(' expression ')'
 | Leaf                  | `NumberExpression` |
 | Composite (unary)     | `NegateExpression` |
 | Composite (binary)    | `BinaryExpression` → `Add`, `Subtract`, `Multiply`, `Divide`, `Modulo`, `Power` |
+| Composite (n-ary)     | `FunctionExpression` (calls a `MathFunction`, e.g. `sqrt`, `pow`) |
 
 The front end lives in `edu.arizona.ece696.ast.parser` (`Lexer`, `Parser`,
 `Token`, `TokenType`, `ParseException`).
@@ -51,7 +59,7 @@ Composite/
 │   └── parser/                                    # Lexer + Parser
 └── src/test/
     ├── java/edu/arizona/ece696/ast/              # JUnit 5 tests
-    └── resources/expressions.csv                 # the test oracle
+    └── resources/oracle_expressions.csv          # the test oracle
 ```
 
 ## Build & run
@@ -84,10 +92,27 @@ java -cp out edu.arizona.ece696.ast.Main
 
 ## The test oracle
 
-`src/test/resources/expressions.csv` holds `expression,expected` rows (with `#`
-comment lines). `ExpressionEvaluatorTest` reads it via `@MethodSource`, parses and
-evaluates each expression, and asserts the result matches the expected value within
-`1e-9`. **Add a new test case by adding a line to the CSV** — no code change needed.
+`src/test/resources/oracle_expressions.csv` holds `expression,expected` rows (with
+`#` comment lines). `ExpressionEvaluatorTest` reads it via `@MethodSource`, parses
+and evaluates each expression, and asserts the result matches the expected value
+within `1e-9`. **Add a new test case by adding a line to the CSV** — no code change
+needed. (The `oracle_` prefix marks this file as the test oracle.)
+
+## AST logging (spot check)
+
+Every time the parser finishes building a tree, it logs the original expression
+string together with the constructed AST at `INFO` via `java.util.logging`, so you
+can eyeball what was built:
+
+```
+INFO: AST constructed for "sqrt(16) + 2":
+\-- +
+    |-- sqrt()
+    |   \-- 16.0
+    \-- 2.0
+```
+
+To silence it, raise the level of the `edu.arizona.ece696.ast.parser.Parser` logger.
 
 ## Sample output
 

@@ -8,10 +8,10 @@ import java.util.List;
  * (the scanning / lexical-analysis phase).
  *
  * <p>The lexer recognizes numeric literals (integers and decimals such as
- * {@code 12}, {@code 3.14}, or {@code .5}), the operators
- * {@code + - * / % ^}, and parentheses. Whitespace is skipped. Any other
- * character causes a {@link ParseException}. A terminating {@link TokenType#EOF}
- * token is always appended.</p>
+ * {@code 12}, {@code 3.14}, or {@code .5}), identifiers (function names such as
+ * {@code sqrt}), the operators {@code + - * / % ^}, commas, and parentheses.
+ * Whitespace is skipped. Any other character causes a {@link ParseException}. A
+ * terminating {@link TokenType#EOF} token is always appended.</p>
  */
 public final class Lexer {
 
@@ -44,6 +44,10 @@ public final class Lexer {
             }
             if (isNumberStart(c)) {
                 tokens.add(readNumber());
+                continue;
+            }
+            if (Character.isLetter(c)) {
+                tokens.add(readIdentifier());
                 continue;
             }
             tokens.add(readOperatorOrParen(c));
@@ -82,7 +86,19 @@ public final class Lexer {
         return new Token(TokenType.NUMBER, text, start);
     }
 
-    /** Reads a single-character operator or parenthesis token. */
+    /**
+     * Reads an identifier (letter followed by letters/digits), used for function
+     * names such as {@code sqrt} or {@code log10}.
+     */
+    private Token readIdentifier() {
+        int start = index;
+        while (index < input.length() && Character.isLetterOrDigit(input.charAt(index))) {
+            index++;
+        }
+        return new Token(TokenType.IDENT, input.substring(start, index), start);
+    }
+
+    /** Reads a single-character operator, comma, or parenthesis token. */
     private Token readOperatorOrParen(char c) {
         int start = index;
         TokenType type = switch (c) {
@@ -94,6 +110,7 @@ public final class Lexer {
             case '^' -> TokenType.CARET;
             case '(' -> TokenType.LPAREN;
             case ')' -> TokenType.RPAREN;
+            case ',' -> TokenType.COMMA;
             default -> throw new ParseException("Unexpected character '" + c + "'", start);
         };
         index++;

@@ -75,6 +75,26 @@ class AstStructureTest {
             NegateExpression neg = assertInstanceOf(NegateExpression.class, ast);
             assertInstanceOf(PowerExpression.class, neg.getOperand());
         }
+
+        @Test
+        @DisplayName("'sqrt(16)' is a unary FunctionExpression with one argument")
+        void unaryFunctionNode() {
+            Expression ast = Parser.parseExpression("sqrt(16)");
+            FunctionExpression fn = assertInstanceOf(FunctionExpression.class, ast);
+            assertEquals(MathFunction.SQRT, fn.getFunction());
+            assertEquals(1, fn.getArguments().size());
+            assertInstanceOf(NumberExpression.class, fn.getArguments().get(0));
+        }
+
+        @Test
+        @DisplayName("'pow(2, 3+1)' is a binary FunctionExpression whose 2nd arg is a subtree")
+        void binaryFunctionNodeWithExpressionArgument() {
+            Expression ast = Parser.parseExpression("pow(2, 3+1)");
+            FunctionExpression fn = assertInstanceOf(FunctionExpression.class, ast);
+            assertEquals(MathFunction.POW, fn.getFunction());
+            assertEquals(2, fn.getArguments().size());
+            assertInstanceOf(AddExpression.class, fn.getArguments().get(1));
+        }
     }
 
     @Nested
@@ -87,6 +107,13 @@ class AstStructureTest {
             assertEquals("(2.0 + (3.0 * 4.0))", Parser.parseExpression("2+3*4").toInfix());
             assertEquals("((2.0 + 3.0) * 4.0)", Parser.parseExpression("(2+3)*4").toInfix());
             assertEquals("(-(3.0 ^ 2.0))", Parser.parseExpression("-3^2").toInfix());
+        }
+
+        @Test
+        @DisplayName("renders function calls as name(arg, ...)")
+        void infixRendersFunctionCalls() {
+            assertEquals("sqrt(16.0)", Parser.parseExpression("sqrt(16)").toInfix());
+            assertEquals("pow(2.0, (3.0 + 1.0))", Parser.parseExpression("pow(2,3+1)").toInfix());
         }
     }
 

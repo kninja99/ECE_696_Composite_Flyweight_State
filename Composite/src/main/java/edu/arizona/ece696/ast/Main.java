@@ -34,7 +34,11 @@ public final class Main {
             "-(2 + 1) * 2",
             "1 + 2 - 3 + 4",
             "10 - 2 * 3 + 8 / 4",
-            "((1 + 2) * (3 + 4)) % 5"
+            "((1 + 2) * (3 + 4)) % 5",
+            "sqrt(16) + pow(2, 3)",
+            "sqrt(pow(3, 2) + pow(4, 2))",
+            "max(3, 7) - min(3, 7)",
+            "10 / (5 - 5)"   // divide-by-zero -> IEEE Infinity (no exception)
     };
 
     /**
@@ -49,7 +53,11 @@ public final class Main {
         }
     }
 
-    /** Parses, prints, and evaluates a single expression, handling parse errors. */
+    /**
+     * Parses, prints, and evaluates a single expression, reporting a parse-time
+     * error on malformed input without aborting the whole demo. (Divide-by-zero is
+     * not an error here: it evaluates to an IEEE {@code Infinity}/{@code NaN}.)
+     */
     private static void report(String source) {
         System.out.println("Expression : " + source);
         try {

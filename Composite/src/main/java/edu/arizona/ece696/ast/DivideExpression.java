@@ -3,9 +3,10 @@ package edu.arizona.ece696.ast;
 /**
  * Concrete binary composite for division ({@code /}).
  *
- * <p>Division follows IEEE-754 {@code double} semantics: dividing by zero yields
- * {@code Infinity} (or {@code NaN} for {@code 0/0}) rather than throwing an
- * exception. This behavior is intentional and is exercised by the test suite.</p>
+ * <p>Division follows IEEE-754 {@code double} semantics: dividing a non-zero value
+ * by zero yields a signed {@code Infinity}, and {@code 0/0} yields {@code NaN},
+ * rather than throwing an exception. This behavior is intentional and is exercised
+ * by {@code DivideByZeroTest}.</p>
  */
 public final class DivideExpression extends BinaryExpression {
 

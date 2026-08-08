@@ -1,10 +1,14 @@
 package edu.arizona.ece696.ast.parser;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Logger;
 
 import edu.arizona.ece696.ast.AddExpression;
 import edu.arizona.ece696.ast.DivideExpression;
 import edu.arizona.ece696.ast.Expression;
+import edu.arizona.ece696.ast.FunctionExpression;
+import edu.arizona.ece696.ast.MathFunction;
 import edu.arizona.ece696.ast.ModuloExpression;
 import edu.arizona.ece696.ast.MultiplyExpression;
 import edu.arizona.ece696.ast.NegateExpression;
@@ -22,8 +26,12 @@ import edu.arizona.ece696.ast.SubtractExpression;
  *   term       := factor    (('*' | '/' | '%') factor)*
  *   factor     := '-' factor | power
  *   power      := primary    ('^' factor)?        // right-associative
- *   primary    := NUMBER | '(' expression ')'
+ *   primary    := NUMBER | function | '(' expression ')'
+ *   function   := IDENT '(' (expression (',' expression)*)? ')'
  * </pre>
+ *
+ * <p>A {@code function} is a call to a built-in {@link MathFunction} such as
+ * {@code sqrt(x)} or {@code pow(a, b)}; its arguments are full expressions.</p>
  *
  * <p>Consequences of this grammar: {@code *}, {@code /}, {@code %} bind tighter
  * than {@code +}/{@code -}; {@code ^} binds tighter than {@code *} and than unary
@@ -38,6 +46,10 @@ import edu.arizona.ece696.ast.SubtractExpression;
  */
 public final class Parser {
 
+    /** Logger used to record each constructed AST for spot-checking. */
+    private static final Logger LOGGER = Logger.getLogger(Parser.class.getName());
+
+    private final String source;
     private final List<Token> tokens;
     private int position;
 
@@ -48,6 +60,7 @@ public final class Parser {
      * @throws ParseException if the input cannot be tokenized
      */
     public Parser(String input) {
+        this.source = (input == null) ? "" : input;
         this.tokens = new Lexer(input).tokenize();
     }
 
@@ -74,6 +87,11 @@ public final class Parser {
         if (next.type() != TokenType.EOF) {
             throw new ParseException("Unexpected token '" + next.text() + "'", next.position());
         }
+        // Spot-check log: record the original input alongside the AST that was
+        // built for it. Uses a supplier so the tree string is only rendered when
+        // the logger is actually enabled at INFO.
+        LOGGER.info(() -> "AST constructed for \"" + source + "\":"
+                + System.lineSeparator() + result.toTreeString());
         return result;
     }
 
@@ -137,13 +155,16 @@ public final class Parser {
         return base;
     }
 
-    /** primary := NUMBER | '(' expression ')' */
+    /** primary := NUMBER | function | '(' expression ')' */
     private Expression primary() {
         Token token = peek();
         switch (token.type()) {
             case NUMBER -> {
                 advance();
                 return new NumberExpression(parseNumber(token));
+            }
+            case IDENT -> {
+                return functionCall();
             }
             case LPAREN -> {
                 advance();
@@ -153,8 +174,35 @@ public final class Parser {
             }
             case EOF -> throw new ParseException("Unexpected end of input", token.position());
             default -> throw new ParseException(
-                    "Expected a number or '(' but found '" + token.text() + "'", token.position());
+                    "Expected a number, function, or '(' but found '" + token.text() + "'",
+                    token.position());
         }
+    }
+
+    /** function := IDENT '(' (expression (',' expression)*)? ')' */
+    private Expression functionCall() {
+        Token name = peek();
+        advance();
+        expect(TokenType.LPAREN, "(");
+        List<Expression> args = new ArrayList<>();
+        if (peek().type() != TokenType.RPAREN) {
+            args.add(expression());
+            while (peek().type() == TokenType.COMMA) {
+                advance();
+                args.add(expression());
+            }
+        }
+        expect(TokenType.RPAREN, ")");
+
+        MathFunction function = MathFunction.byName(name.text());
+        if (function == null) {
+            throw new ParseException("Unknown function '" + name.text() + "'", name.position());
+        }
+        if (args.size() != function.arity()) {
+            throw new ParseException("Function '" + function.functionName() + "' expects "
+                    + function.arity() + " argument(s) but got " + args.size(), name.position());
+        }
+        return new FunctionExpression(function, args);
     }
 
     // --- Helpers ----------------------------------------------------------

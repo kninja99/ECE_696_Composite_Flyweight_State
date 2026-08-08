@@ -21,6 +21,10 @@
  *       {@link edu.arizona.ece696.ast.ModuloExpression Modulo}, and
  *       {@link edu.arizona.ece696.ast.PowerExpression Power}: each holds two child
  *       expressions and combines their values.</li>
+ *   <li><strong>Composite (n-ary)</strong> &mdash;
+ *       {@link edu.arizona.ece696.ast.FunctionExpression}: a call to a built-in
+ *       {@link edu.arizona.ece696.ast.MathFunction} (such as {@code sqrt} or
+ *       {@code pow}) holding one child expression per argument.</li>
  * </ul>
  *
  * <h2>Evaluation</h2>
