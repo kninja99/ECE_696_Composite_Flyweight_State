@@ -1,0 +1,23 @@
+# Maven build output
+target/
+
+# Ad-hoc javac smoke-test output (see README "Verify")
+out/
+sources.txt
+
+# Eclipse project metadata
+.classpath
+.project
+.settings/
+bin/
+
+# IntelliJ
+.idea/
+*.iml
+
+# VS Code
+.vscode/
+
+# OS cruft
+.DS_Store
+Thumbs.db
