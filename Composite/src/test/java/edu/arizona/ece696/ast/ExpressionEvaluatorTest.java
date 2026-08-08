@@ -14,7 +14,7 @@ import edu.arizona.ece696.ast.parser.Parser;
 /**
  * Oracle-based test of the parser + evaluator.
  *
- * <p>The <em>test oracle</em> is the CSV file {@code /expressions.csv}: each row
+ * <p>The <em>test oracle</em> is the CSV file {@code /oracle_expressions.csv}: each row
  * supplies an expression and its independently known expected value. For every
  * row this test parses the expression into a Composite AST, evaluates the AST by
  * traversal, and asserts the computed value matches the oracle's expected value

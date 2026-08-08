@@ -11,7 +11,7 @@ oracle** using JUnit 5.
    like `2 + 3 * 4` into a tree of `Expression` nodes.
 2. **Evaluate by traversal.** Each node computes its own value from its children.
 3. **Print & test against an oracle.** Tests parse each expression, evaluate it,
-   and compare with the expected value listed in `src/test/resources/expressions.csv`.
+   and compare with the expected value listed in `src/test/resources/oracle_expressions.csv`.
 4. **Evaluate many expressions.** The `Main` demo runs a sample set (or your own).
 
 ## Supported grammar
@@ -75,9 +75,9 @@ Composite/
 ### Command line (if Maven is installed)
 
 ```bash
-mvn test                                              # run all JUnit tests
-mvn compile exec:java                                 # run the Main demo
-mvn compile exec:java -Dexec.args="2+3*4 -3^2"        # evaluate your own expressions
+mvn test                                                 # run all JUnit tests
+mvn compile exec:java                                    # run the Main demo
+mvn compile exec:java -Dexec.arguments="2+3*4,-3^2"      # evaluate your own (comma-separated)
 ```
 
 ### Quick smoke test with only a JDK (no Maven)
