@@ -1,0 +1,118 @@
+# Plan: Composite-pattern Arithmetic Expression Parser & Evaluator
+
+## Context
+This is an ECE 696 design-patterns assignment. The goal is a Java, Maven/Eclipse,
+JUnit-tested program that (1) builds an **Abstract Syntax Tree using the Composite
+pattern**, (2) evaluates the AST by traversal, (3) prints the AST and validates
+results against a **test oracle**, and (4) evaluates a variety of expressions.
+
+The project folder (`Composite/`) is currently empty — this is a greenfield build.
+Environment: **Java 26** is installed; **Maven is NOT on PATH** and `JAVA_HOME` is
+unset. Eclipse's bundled Maven (m2e) can build/run the project without a CLI Maven.
+
+### Confirmed scope (from user)
+- **Operators:** `+  -  *  /  %  ^`, parentheses, and unary minus.
+  `^` is **right-associative** and binds tighter than unary minus (so `-3^2 = -9`,
+  `2^3^2 = 512`, `2^-1 = 0.5`). `%` is `Math.IEEEremainder`-free — plain `a % b`.
+- **Numeric type:** `double`.
+- **Test oracle:** CSV-driven JUnit 5 `@ParameterizedTest` via `@CsvFileSource`.
+  The CSV `(expression, expected)` rows ARE the oracle.
+
+## Design
+
+### Grammar (recursive-descent, precedence low→high)
+```
+expression := term      (('+' | '-') term)*
+term       := factor    (('*' | '/' | '%') factor)*
+factor     := '-' factor | power
+power      := primary    ('^' factor)?        // right-associative
+primary    := NUMBER | '(' expression ')'
+```
+
+### Composite pattern mapping
+- **Component (interface):** `Expression` — declares `double evaluate()`, plus
+  display operations `String toInfix()` and `void toTree(StringBuilder, String prefix)`
+  for the ASCII AST printer.
+- **Leaf:** `NumberExpression` (holds one `double`).
+- **Composite — unary:** `NegateExpression` (one child `Expression`).
+- **Composite — binary:** abstract `BinaryExpression` (holds `left`, `right`
+  children + operator symbol; implements shared `toInfix`/`toTree`), with concrete
+  subclasses `AddExpression`, `SubtractExpression`, `MultiplyExpression`,
+  `DivideExpression`, `ModuloExpression`, `PowerExpression` — each overrides
+  `evaluate()`. Distinct subclasses (rather than one enum-driven class) make the
+  Composite hierarchy explicit for the patterns course.
+
+### Parser/lexer
+- `TokenType` (enum: NUMBER, PLUS, MINUS, STAR, SLASH, PERCENT, CARET, LPAREN,
+  RPAREN, EOF), `Token` (type + text + position).
+- `Lexer` — string → `List<Token>`; supports integers/decimals, skips whitespace,
+  throws a clear `ParseException` on unknown characters.
+- `Parser` — recursive-descent over tokens per the grammar above; returns the root
+  `Expression`. Reports position on syntax errors.
+
+### Demo entry point
+- `Main` — parses a handful of sample expressions, prints for each the input, the
+  ASCII AST (`toTree`), the infix reconstruction (`toInfix`), and the evaluated
+  `double`. Demonstrates phases 1, 2, and 4.
+
+## Files to create
+```
+Composite/
+  pom.xml                              # JUnit 5 (jupiter 5.10.x), surefire 3.2.x,
+                                       #   compiler release 17, UTF-8
+  .gitignore                           # target/, *.class, Eclipse cruft
+  README.md                            # build/run instructions (Maven CLI + Eclipse)
+  src/main/java/edu/arizona/ece696/ast/
+    Expression.java                    # Component
+    NumberExpression.java              # Leaf
+    NegateExpression.java              # unary Composite
+    BinaryExpression.java              # abstract binary Composite
+    AddExpression.java SubtractExpression.java MultiplyExpression.java
+    DivideExpression.java ModuloExpression.java PowerExpression.java
+    package-info.java                  # javadoc overview of the pattern
+    parser/
+      TokenType.java Token.java Lexer.java Parser.java ParseException.java
+    Main.java                          # demo
+  src/test/java/edu/arizona/ece696/ast/
+    ExpressionEvaluatorTest.java       # @CsvFileSource oracle: eval == expected
+    AstStructureTest.java              # toInfix / toTree structure + node-type checks
+    ParserErrorTest.java               # malformed input throws ParseException
+  src/test/resources/
+    expressions.csv                    # oracle: expression,expected  (+ tolerance)
+```
+Package/coordinates: groupId `edu.arizona.ece696`, artifactId `composite-ast`.
+Java `release` set to **17** (compiled by JDK 26 → broadly Eclipse-compatible;
+adjustable). First Maven build downloads JUnit/surefire (one-time internet).
+
+### CSV oracle contents (representative rows)
+Precedence, associativity, unary minus, parens, `^`/`%`, and edge cases, e.g.:
+`2+3*4 -> 14`, `(2+3)*4 -> 20`, `-3^2 -> -9`, `2^3^2 -> 512`, `2^-1 -> 0.5`,
+`7%3 -> 1`, `7/2 -> 3.5`, `-(2+1)*2 -> -6`, `1+2-3+4 -> 4`. Float comparison uses a
+small delta in the assertion.
+
+## Documentation & engineering practices
+- Javadoc on every public type/method; `package-info.java` explains the Composite
+  roles (Component/Leaf/Composite).
+- Clear separation: `ast` (model) vs `ast.parser` (front end) vs `Main` (demo).
+- Meaningful `ParseException` messages with position.
+- Tests cover: value oracle (CSV), AST shape/printing, and error handling.
+
+## Verification (end-to-end)
+Because Maven isn't on PATH, use this ladder:
+1. **Smoke test I can run now:** compile main sources with the installed JDK 26
+   (`javac -d out` over `src/main/java`) and run `Main` to confirm ASTs print and
+   evaluate correctly for the samples.
+2. **Preferred full test run:** in Eclipse, import as *Existing Maven Project* and
+   run the JUnit tests (m2e's bundled Maven — no CLI Maven needed). Or, if the user
+   installs Maven, `mvn test` from `Composite/`.
+3. **Optional headless JUnit (this env):** if network allows, fetch the
+   `junit-platform-console-standalone` jar and run the CSV-driven tests directly,
+   so the oracle passes are demonstrated without Eclipse.
+
+Success = all CSV oracle rows pass, AST-structure and error tests pass, and `Main`
+prints correct trees/values for the sample expressions.
+
+## Open/notable choices (sensible defaults, flag if you disagree)
+- `%` uses Java's `%` on doubles (fmod-style), not `IEEEremainder`.
+- Division by zero yields IEEE `Infinity`/`NaN` (Java double semantics), not an
+  exception — this is testable and documented.

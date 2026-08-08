@@ -1,0 +1,401 @@
+The goal of this assignment is to make a parser and evaluator of arithmetical expressions. You can get ispiration online but I want you to operate int two phases:
+
+1. Make an abstract syntax tree using the composite pattern
+2. evaluate the AST traversal
+3. Test it throughly to print the AST and test it towards a testing oracle
+4. Next, evaluate various expressions
+
+
+You can create a csv file for ease of testing
+
+required technologies
+
+1. Java
+2. Maven capatable project with eclipse
+3. junit for testing (must use a test oracle)
+
+
+remeber the Abstract syntax tree must be built using the composite design pattern. Use best software engineering practices for documentation and testing.
+
+I'll start by understanding the current state of the project directory.
+
+
+Ran 3 commands
+The repo is essentially empty (greenfield) — the git root is the parent folder, and Composite/ is where the project goes. Java 26 is installed, but Maven is not on PATH and JAVA_HOME isn't set. That's fine for Eclipse (it bundles its own Maven via m2e), but it affects how I verify the build. No existing code to explore, so this is a clean design task.
+
+Let me confirm a couple of scope decisions that genuinely change the deliverable before I finalize the plan.
+
+Which operators/features should the parser and AST support?
+
+Add power ^ and modulo %
+
+What numeric type should expressions evaluate to?
+
+double
+
+How should the JUnit test oracle be structured?
+
+CSV-driven parameterized tests
+
+Got it — power ^ (right-associative) and modulo % included, double evaluation, and a CSV-driven JUnit oracle. Let me record the design decisions and write the final plan.
+
+Created
+the-goal-of-this-crispy-papert.md
++118
+-0
+The plan is complete and recorded. Here's the summary of what I'll build once you approve:
+
+A Java/Maven/JUnit project (Composite/) implementing an arithmetic parser + evaluator:
+
+AST via Composite pattern — Expression interface (Component), NumberExpression (Leaf), and composite operator nodes: an abstract BinaryExpression with concrete Add/Subtract/Multiply/Divide/Modulo/Power subclasses, plus NegateExpression for unary minus.
+Recursive-descent parser (Lexer + Parser) handling + - * / % ^, parentheses, and unary minus — with ^ right-associative and binding tighter than unary minus (-3^2 = -9, 2^3^2 = 512).
+AST printing — ASCII tree view + infix reconstruction, exercised by Main and by tests.
+CSV-driven test oracle — JUnit 5 @ParameterizedTest + @CsvFileSource reading expressions.csv (expression, expected), plus AST-structure and parse-error tests.
+One thing to flag: Maven isn't installed here and JAVA_HOME is unset. The project is fully Eclipse-ready (m2e's bundled Maven builds it with no CLI Maven), but my headless verification will lean on compiling with JDK 26 + running Main; the first Maven/Eclipse build downloads JUnit once (needs internet). Details, including grammar and the file layout, are in the plan.
+
+Found tools
+Proposed plan
+
+Used 6 tools
+Now let me build everything. Starting with the AST classes (the Composite core).
+
+
+Created 4 files, used a tool
++310
+-0
+Now the six concrete binary operator classes:
+
+
+Created 7 files
++223
+-0
+Now the parser subpackage. Starting with the lexer components:
+
+
+Created 6 files, used 2 tools
++391
+-0
+Now the Main demo class:
+
+Created
+Main.java
++77
+-0
+Now let me do an early javac smoke test on the main sources before writing tests, to catch any compile errors:
+
+Compiled main sources and ran Main demo
+Compiles and runs correctly — all precedence/associativity cases match the oracle (14, -9, 512, 0.5). Now the tests and CSV oracle.
+
+
+Created expressions.csv, used 2 tools
++48
+-0
+Note: JUnit's @CsvFileSource has no comment-line support, so my documented # lines would be parsed as data. I'll load the CSV via a @MethodSource helper that skips comments/blanks — still fully CSV-driven, and keeps the well-documented oracle file.
+
+
+Created 4 files
++298
+-0
+Now the Maven scaffolding — pom.xml, .gitignore, README:
+
+
+Created 3 files, used 2 tools
++185
+-0
+Scaffolding done. Now let me verify the full build — including the JUnit tests. I'll try to fetch the JUnit Console Standalone jar to run tests headlessly (no Maven).
+
+
+Ran a command, used 2 tools
+Got the jar (2.6 MB). Now compile main + test sources and run the tests:
+
+Compiled and ran JUnit tests headlessly
+All 56 tests pass — 34 CSV oracle rows plus the AST-structure and parser-error tests. Let me clean up the temporary build artifacts from the project tree:
+
+
+Ran a command, used a tool
+The project is complete and fully verified. Here's what was built in Composite/:
+
+What was delivered
+1. AST via Composite pattern (src/main/java/edu/arizona/ece696/ast/)
+
+Component: Expression.java — the shared interface (evaluate, toInfix, toTree)
+Leaf: NumberExpression.java
+Unary composite: NegateExpression.java
+Binary composite: abstract BinaryExpression.java + six concrete ops (Add, Subtract, Multiply, Divide, Modulo, Power)
+package-info.java documents the pattern roles
+2. Evaluation by traversal — post-order traversal; a package-info-documented recursive-descent Parser.java + Lexer.java build the tree with correct precedence/associativity.
+
+3. Printing + oracle tests (src/test/)
+
+expressions.csv — 34-row test oracle
+ExpressionEvaluatorTest (CSV-driven parameterized), AstStructureTest (tree shape + printing), ParserErrorTest
+4. Demo — Main.java prints AST + infix + value for a sample set or your own args.
+
+Plus pom.xml (JUnit 5.10.2, Surefire 3.2.5, Java 17), README.md, and .gitignore.
+
+Verification
+javac (JDK 26) compile of all sources: OK
+Main demo prints correct trees and values (-3^2 = -9, 2^3^2 = 512, 2^-1 = 0.5)
+JUnit: 56 tests, all passing (ran headlessly via the JUnit console-standalone jar since Maven isn't installed)
+Two things to note
+Maven isn't on your PATH, so I verified tests with a standalone JUnit runner. In Eclipse, import as Existing Maven Project and Run As ▸ JUnit — m2e's bundled Maven downloads JUnit on first build (needs internet once). Build steps are in the README.
+The project sits at Composite/, which is untracked in the parent git repo. I did not commit anything — let me know if you'd like me to commit.
+Would you like me to commit these files, or add a Maven Wrapper (mvnw) so the project builds from the command line without installing Maven?
+
+I spotted a couple things that I would like you to change, since the test orcle is the CSV file I want you to add a prefix of oracle_
+
+I also want you to add math function support (example sqrt())
+
+For testing I noticed that we dont have a divide by zero test. Add in this test and handle it appropriately.
+
+Finally I would like you to log the AST when it finished be created. This log should have the originla string thats being evaluated, and the tree that was constructed. This is meant for a spot check
+
+Good catches — all four are clear improvements. Let me work through them: (1) rename the oracle CSV with the oracle_ prefix, (2) add math-function support (sqrt, pow, etc.), (3) make divide-by-zero throw a proper ArithmeticException with a test, and (4) log each AST (original string + tree) right after it's built.
+
+Let me set up tasks and start.
+
+
+Used 4 tools
+Starting with the new AST node classes for functions:
+
+
+Created 2 files
++218
+-0
+Now update TokenType to add IDENT and COMMA:
+
+Edited
+TokenType.java
++4
+-0
+Now update the Lexer to scan identifiers and commas:
+
+Edited
+Lexer.java
++22
+-5
+Now the Parser — add function-call parsing, store the source, and add AST logging. First the imports:
+
+Edited
+Parser.java
++4
+-0
+Now update the grammar doc, add the source field + logger, and add function parsing:
+
+Edited
+Parser.java
++10
+-1
+Now add the logging in parse():
+
+Edited
+Parser.java
++5
+-0
+Now add function-call parsing to the primary rule:
+
+
+Edited Parser.java, used a tool
++32
+-2
+Now the divide-by-zero handling. Update DivideExpression:
+
+Edited
+DivideExpression.java
++13
+-4
+Now ModuloExpression (same class of error — modulo by zero):
+
+Edited
+ModuloExpression.java
++12
+-2
+Now the renamed oracle CSV with the added function rows:
+
+
+Created oracle_expressions.csv, ran a command
++71
+-0
+Update CsvOracle to point at the renamed resource:
+
+Edited
+CsvOracle.java
++2
+-2
+Now the divide-by-zero test class:
+
+Created
+EvaluationErrorTest.java
++62
+-0
+Let me add a function-node structure test to AstStructureTest:
+
+Edited
+AstStructureTest.java
++27
+-0
+Add function-related error cases to ParserErrorTest:
+
+Edited
+ParserErrorTest.java
++7
+-1
+Now update Main to include function samples and catch ArithmeticException:
+
+Edited
+Main.java
++12
+-2
+Now update package-info.java to include the new roles:
+
+Edited
+package-info.java
++4
+-0
+Now update the README. First the grammar and operators sections:
+
+Edited
+README.md
++32
+-8
+Tasks done — now let me recompile everything and rerun the full test suite:
+
+Ran a command, used a tool
+Two CSV-oracle tests failed. Let me see the actual failure detail:
+
+Inspected oracle test failure cause
+The CSV split broke because function expressions now contain commas (pow(2,10),1024). Since the expected value never contains a comma, I'll split on the last comma instead of the first:
+
+
+Edited CsvOracle.java, ran a command
++5
+-4
+All 94 tests pass. Now let me verify the demo — showing the AST logging, functions, and divide-by-zero handling end-to-end:
+
+Ran Main demo showing logging, functions, divide-by-zero
+Everything works as requested. Let me finalize the tasks and clean up:
+
+
+Ran a command, used 3 tools
+All four changes are done and verified end-to-end. Here's a summary:
+
+1. Oracle CSV renamed → oracle_expressions.csv
+Renamed the resource and updated its loader (CsvOracle.java) plus README references. The oracle_ prefix now clearly marks it as the test oracle.
+
+2. Math function support
+New Composite node FunctionExpression.java (n-ary — one child per argument) and a MathFunction.java registry.
+Unary: sqrt, abs, sin, cos, tan, exp, ln, log10; binary: pow, max, min, hypot. Case-insensitive; arguments are full expressions, so sqrt(pow(3,2)+pow(4,2)) = 5.
+Lexer now scans identifiers/commas; parser has a function grammar rule with arity checking. Adding a new function is a one-line change in the enum.
+
+3. Divide-by-zero handling + test
+DivideExpression (and ModuloExpression) now throw a clear ArithmeticException on a zero divisor instead of silently returning Infinity/NaN. New EvaluationErrorTest.java covers literal, decimal, computed, 0/0, and nested cases, plus modulo-by-zero.
+
+4. AST logging for spot-checks
+Parser.parse() logs the original string and the constructed tree at INFO via java.util.logging right after building — e.g.:
+
+INFO: AST constructed for "sqrt(16)+pow(2,3)":
+\-- +
+    |-- sqrt()
+    |   \-- 16.0
+    \-- pow()
+        |-- 2.0
+        \-- 3.0
+Verification
+Compiles cleanly (25 Java files, JDK 26).
+JUnit: 94 tests, all passing (up from 56).
+Demo confirmed functions evaluate correctly and divide-by-zero is caught (Math error : Division by zero: 10.0 / 0.0).
+One decision to flag: for "handle it appropriately" on divide-by-zero, I chose to throw ArithmeticException (mirroring Java's integer-division behavior) rather than keep IEEE Infinity/NaN. That's the more defensive reading, but if you'd prefer it to return Infinity silently instead, that's a one-line revert — just say the word.
+
+Nothing is committed yet. Want me to commit these changes?
+
+I would prefer to return Infinity silently instead
+
+Sure — reverting to IEEE-754 semantics (silent Infinity/NaN). I'll keep a divide-by-zero test, but now it asserts the Infinity/NaN behavior instead of an exception. Let me make the changes.
+
+First, DivideExpression back to plain division:
+
+Edited
+DivideExpression.java
++5
+-13
+Now ModuloExpression:
+
+Edited
+ModuloExpression.java
++3
+-12
+Now replace the error test with one asserting IEEE behavior. Delete the old file and create DivideByZeroTest:
+
+
+Ran a command, created DivideByZeroTest.java
++67
+-0
+Now add divide-by-zero rows to the CSV oracle itself (so the oracle covers it too — Double.parseDouble handles Infinity/NaN, and JUnit's assertEquals matches them by bit-equality):
+
+Edited
+oracle_expressions.csv
++6
+-0
+Now revert the Main demo's ArithmeticException catch (no longer thrown) and update the sample comment:
+
+Edited
+Main.java
++4
+-6
+Now update the README divide-by-zero note:
+
+Edited
+README.md
++3
+-2
+Now recompile and rerun the full suite to confirm everything passes with the reverted semantics:
+
+Recompile, rerun tests, verify Infinity behavior
+Done. Divide-by-zero now returns IEEE Infinity/NaN silently instead of throwing.
+
+What changed:
+
+DivideExpression and ModuloExpression reverted to plain double arithmetic (no exception), with javadoc updated to document the IEEE behavior.
+Replaced the old exception test with DivideByZeroTest, which now asserts the actual semantics: 1/0 = +Infinity, -1/0 = -Infinity, 0/0 = NaN, 5%0 = NaN, and that Infinity propagates through surrounding expressions.
+Added special-value rows to oracle_expressions.csv (1/0,Infinity, 0/0,NaN, etc.), so the CSV oracle itself covers divide-by-zero.
+Main no longer catches ArithmeticException (dead now); the 10/(5-5) sample prints Value : Infinity.
+README updated to reflect the IEEE-754 behavior.
+Verification: compiles clean, 97 tests pass (up from 94 — the CSV gained the special-value rows and DivideByZeroTest replaced the old one), and the demo confirms 10/(5-5) → Infinity.
+
+Still nothing committed. Want me to commit now?
+
+fix the documentation discrepancies in the read me file
+
+Read
+README.md
+Let me compare the README against the actual implementation. I found two discrepancies:
+
+Line 14 still references the old expressions.csv (renamed to oracle_expressions.csv).
+Line 80 uses -Dexec.args=..., which is the property for the exec:exec goal — the exec:java goal (what's configured in the pom) reads -Dexec.arguments as a comma-separated list, so the documented command wouldn't actually pass the arguments.
+Let me fix both:
+
+Edited
+README.md
++4
+-4
+Let me scan the whole project for any remaining stale references to be thorough:
+
+Searched
+(^|[^_])expressions\.csv|exec\.args\b
+Found one more stale reference — a javadoc comment in ExpressionEvaluatorTest.java still names the old file. Let me fix that too:
+
+Edited
+ExpressionEvaluatorTest.java
++1
+-1
+I fixed the documentation discrepancies:
+
+In the README:
+
+Line 14 — the "what it does" section still pointed at src/test/resources/expressions.csv; corrected to oracle_expressions.csv.
+Line 80 — the command-line example used -Dexec.args="2+3*4 -3^2", which is the property for the exec:exec goal and would have been silently ignored by the configured exec:java goal. Corrected to -Dexec.arguments="2+3*4,-3^2" (comma-separated, as exec:java expects).
+
+Bonus (found while scanning):
+3. A javadoc comment in ExpressionEvaluatorTest.java:17 still referenced /expressions.csv — updated to /oracle_expressions.csv.
+
+I verified the rest of the README matches the implementation: the grammar, the function lists (8 unary + 4 binary), the Composite-roles table, the divide-by-zero/IEEE note, the project layout, and both the logging and sample-output tree renderings are all accurate. The javadoc fix is a comment-only change, so the 97 passing tests are unaffected.
