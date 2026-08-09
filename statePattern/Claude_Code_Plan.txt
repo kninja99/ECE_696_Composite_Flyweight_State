@@ -1,0 +1,134 @@
+# Traffic Light — State Design Pattern (Java / Maven)
+
+## Context
+
+ECE 696 design-patterns assignment. The repo already holds two completed
+sibling assignments (`Composite/`, `serverTest/`); the `statePattern/` folder is
+currently empty and is where this project goes. The goal is a console
+application, built with the **State design pattern**, that simulates a
+traffic light / semaphore: it cycles Red → Green → Yellow, shows the current
+color, and shows a big countdown timer of the seconds remaining in the current
+state so a waiting driver knows how long is left. Each state answers
+`boolean isIntersectionOpen()`, and the **client interacts only with the
+`TrafficLight` context, never with the concrete state classes** — the defining
+property of the State pattern.
+
+The new project must import cleanly into Eclipse as a Maven project and match
+the conventions already used by `Composite/` (package `edu.arizona.ece696.*`,
+Java 17, JUnit 5.10.2, Surefire 3.2.5, `exec-maven-plugin`, `package-info.java`,
+thorough Javadoc, a README with Eclipse import steps).
+
+### Decisions (confirmed with user)
+- `isIntersectionOpen()`: **Green = true, Yellow = true, Red = false** (only red
+  closes the intersection).
+- Durations: **Red = 5 s, Yellow = 1 s, Green = 4 s** (per requirements).
+- Transition order (real light): **Red → Green → Yellow → Red …**, starting on Red.
+- Demo runs a **fixed number of full cycles** (default 3, overridable by a CLI arg),
+  then exits cleanly.
+
+## State-pattern roles
+
+| Role | Class |
+|------|-------|
+| Context ("semaphore", the only thing the client touches) | `TrafficLight` |
+| State (interface) | `TrafficLightState` |
+| Concrete states | `RedState`, `GreenState`, `YellowState` |
+| Client / demo | `Main` |
+
+## Files to create
+
+All under `statePattern/`, package `edu.arizona.ece696.state`.
+
+```
+statePattern/
+├── pom.xml
+├── README.md
+├── .gitignore
+└── src/
+    ├── main/java/edu/arizona/ece696/state/
+    │   ├── package-info.java
+    │   ├── TrafficLightState.java
+    │   ├── RedState.java
+    │   ├── GreenState.java
+    │   ├── YellowState.java
+    │   ├── TrafficLight.java
+    │   └── Main.java
+    └── test/java/edu/arizona/ece696/state/
+        ├── TrafficLightStateTest.java
+        └── TrafficLightTest.java
+```
+
+### `pom.xml`
+Copy `Composite/pom.xml` structure; change `artifactId` → `traffic-light-state`,
+`name`/`description` to the traffic-light project, and the exec plugin
+`mainClass` → `edu.arizona.ece696.state.Main`. Keep Java 17, JUnit 5.10.2,
+Surefire 3.2.5, exec-maven-plugin 3.2.0.
+
+### `TrafficLightState.java` (State interface)
+```java
+public interface TrafficLightState {
+    String colorName();                 // "RED" / "YELLOW" / "GREEN"
+    int durationSeconds();              // 5 / 1 / 4
+    boolean isIntersectionOpen();       // per-state, required method
+    TrafficLightState next();           // returns the successor state
+}
+```
+Concrete states are **stateless singletons** (`public static final INSTANCE`) —
+they hold no per-light data, so one shared instance each is safe and idiomatic.
+- `RedState`: color "RED", 5 s, `isIntersectionOpen()=false`, `next()=GreenState.INSTANCE`.
+- `GreenState`: color "GREEN", 4 s, `isIntersectionOpen()=true`, `next()=YellowState.INSTANCE`.
+- `YellowState`: color "YELLOW", 1 s, `isIntersectionOpen()=true`, `next()=RedState.INSTANCE`.
+
+### `TrafficLight.java` (Context — the "semaphore")
+- Fields: `private TrafficLightState state;` and `private int remainingSeconds;`.
+- Constructor: `TrafficLight()` starts on `RedState.INSTANCE` with
+  `remainingSeconds = state.durationSeconds()`. Optional overload to start on a
+  given state (useful for tests).
+- **`tick()`** — the core timer step, kept pure (no `Thread.sleep`, no printing) so
+  it is fully unit-testable:
+  - decrement `remainingSeconds`;
+  - when it reaches 0, advance: `state = state.next(); remainingSeconds = state.durationSeconds();`.
+- Delegating query methods (client works through these, never touching state classes):
+  `getColorName()`, `getRemainingSeconds()`, `isIntersectionOpen()`.
+- **`render()`** returns the formatted console line as a `String` (color, big
+  countdown, open/closed) so the exact output can be asserted in tests; `Main`
+  just prints it. e.g. `[ RED    ] time remaining: 5s  | intersection: CLOSED`.
+
+### `Main.java` (Client / demo)
+- Reads optional `args[0]` as the number of full cycles (default 3; fall back to
+  default on parse error).
+- Loop: print `light.render()`, `Thread.sleep(1000)`, `light.tick()` — so both
+  individual ticks (the countdown decrementing) and state transitions are visible
+  live on the console. Stop after the requested number of complete
+  Red→Green→Yellow cycles.
+- Sleep is isolated here (not in `tick()`), keeping the logic testable.
+
+## Tests (JUnit 5, verify transitions + outputs)
+
+`TrafficLightStateTest.java` — per-state contract:
+- Durations: Red=5, Green=4, Yellow=1.
+- `isIntersectionOpen()`: Red=false, Green=true, Yellow=true.
+- `next()` wiring: Red→Green, Green→Yellow, Yellow→Red (all three transitions).
+- Color names correct.
+
+`TrafficLightTest.java` — context behavior over time:
+- Starts on Red with remaining = 5.
+- Countdown: repeated `tick()` decrements `remainingSeconds` correctly within a state.
+- **Transition on expiry**: after the right number of ticks, Red→Green→Yellow→Red,
+  each with its duration reset (drives a full cycle and asserts the sequence).
+- `isIntersectionOpen()` delegates correctly at each phase.
+- `render()` output: assert the string contains the color, the remaining seconds,
+  and the correct OPEN/CLOSED label for at least one state of each color
+  (verifies "outputs").
+
+## Verification
+
+From `statePattern/`:
+
+- Run tests: `mvn test` (all transition + output tests pass).
+- Run demo: `mvn compile exec:java` (watch the countdown tick down and the light
+  cycle Red→Green→Yellow); `mvn compile exec:java -Dexec.arguments="1"` for one cycle.
+- No-Maven smoke test (JDK only):
+  `find src/main/java -name "*.java" > sources.txt && javac -d out @sources.txt && java -cp out edu.arizona.ece696.state.Main`
+- Eclipse: File ▸ Import ▸ Maven ▸ Existing Maven Projects ▸ select `statePattern`;
+  run `Main` as Java Application; run `src/test/java` as JUnit Test.
