@@ -1,10 +1,11 @@
 # Echo Server Concurrency Strategies — Load Test & Comparison
 
 An ECE 696 assignment. Starting from **Dr. Donahoo's TCP echo server** (*TCP/IP Sockets
-in Java*), this project reworks it onto `java.util.concurrent.ExecutorService` under
-**three concurrency strategies**, adds a **simulated per-connection overhead**, load-tests
-all three with **Apache JMeter** at 5/10/50/100/500 concurrent clients, and renders
-**comparison graphs** so you can see which strategy wins in which scenario.
+in Java*), this project builds **three concurrency strategies** (two reworked onto
+`java.util.concurrent.ExecutorService`, one kept as a raw thread-per-connection — see
+below), adds a **simulated per-connection overhead**, load-tests all three with **Apache
+JMeter** at 5/10/50/100/500 concurrent clients, and renders **comparison graphs** so you
+can see which strategy wins in which scenario.
 
 ## The idea
 
@@ -14,15 +15,23 @@ stands in for "real" per-request work (a DB call, disk I/O, crypto). Because eve
 connection pays the same 100 ms, the only thing that differs between the servers is *how
 they schedule concurrent connections* — which is exactly what we measure.
 
-| Strategy (separate class)        | Donahoo original      | ExecutorService                        | Under load (100 ms overhead) |
+| Strategy (separate class)        | Donahoo original      | Concurrency mechanism                  | Under load (100 ms overhead) |
 |----------------------------------|-----------------------|----------------------------------------|------------------------------|
 | `SingleThreadEchoServer`         | `TCPEchoServer`       | `Executors.newSingleThreadExecutor()`  | Serial: ~10 conn/s, latency grows with the queue |
-| `ThreadPerConnectionEchoServer`  | `TCPEchoServerThread` | `Executors.newCachedThreadPool()`      | Fully parallel: ~flat latency, until thread count itself is the bottleneck |
+| `ThreadPerConnectionEchoServer`  | `TCPEchoServerThread` | raw `new Thread(...)` per connection   | Fully parallel: ~flat latency, until thread count itself is the bottleneck |
 | `ThreadPoolEchoServer`           | `TCPEchoServerPool`   | `Executors.newFixedThreadPool(n)`      | Bounded: throughput ≈ `n × 10` conn/s, then it plateaus and queues |
 
-All three keep the classic `accept()` loop; each just hands the accepted socket to its
-executor with `service.execute(new EchoProtocol(sock, logger))` instead of `new Thread(...)`.
-That is how "three strategies" and "convert everything to `ExecutorService`" coexist.
+All three keep the classic `accept()` loop. The single-threaded and thread-pool servers
+hand the accepted socket to an `ExecutorService` (`service.execute(new EchoProtocol(...))`).
+
+**Why thread-per-connection is *not* on an `ExecutorService`.** The assignment asks whether
+an `ExecutorService` implements thread-per-connection — it doesn't. The closest factory,
+`newCachedThreadPool()`, *reuses* idle threads rather than creating one fresh thread per
+connection, and `newFixedThreadPool()` *bounds* concurrency. Neither matches the defining
+behavior of the strategy (one new, unbounded thread per client), so this server keeps
+Dr. Donahoo's original raw `new Thread(new EchoProtocol(...)).start()`. The simulated
+overhead still lives in the shared `EchoProtocol`, so all three do identical per-connection
+work — only the thread management differs.
 
 ## Project layout
 
@@ -36,7 +45,7 @@ serverTest/
 ├── src/main/java/edu/arizona/ece696/echo/
 │   ├── EchoProtocol.java             # SHARED: echo + 100 ms/≥4-byte overhead (a Runnable)
 │   ├── SingleThreadEchoServer.java   # Strategy 1  (newSingleThreadExecutor)
-│   ├── ThreadPerConnectionEchoServer.java  # Strategy 2  (newCachedThreadPool)
+│   ├── ThreadPerConnectionEchoServer.java  # Strategy 2  (raw new Thread per connection)
 │   ├── ThreadPoolEchoServer.java     # Strategy 3  (newFixedThreadPool)
 │   ├── EchoClient.java               # smoke-test client (echo + round-trip timing)
 │   └── ChartGenerator.java           # JMeter .jtl → summary.csv + throughput.png + latency.png

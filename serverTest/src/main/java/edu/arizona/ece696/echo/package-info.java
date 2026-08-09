@@ -2,19 +2,24 @@
  * TCP echo server under three concurrency strategies, all built on
  * {@link java.util.concurrent.ExecutorService}.
  *
- * <p>The classic Donahoo echo server is reworked so that the accept loop hands
- * each connection to an executor instead of a raw {@code new Thread(...)}. Each
- * strategy is a separate server class differing only in which executor it uses:</p>
+ * <p>Two of the three servers are reworked so that the accept loop hands each
+ * connection to an {@code ExecutorService} instead of a raw {@code new Thread(...)}.
+ * The thread-per-connection server is the deliberate exception: no executor
+ * implements a genuine one-fresh-thread-per-connection policy (a cached pool reuses
+ * idle threads; a fixed pool bounds them), so it keeps Donahoo's original raw
+ * {@code Thread} &mdash; see
+ * {@link edu.arizona.ece696.echo.ThreadPerConnectionEchoServer} for the full
+ * justification. Each strategy is a separate server class:</p>
  *
  * <table border="1">
- *   <caption>Strategy to executor mapping</caption>
- *   <tr><th>Class</th><th>Donahoo original</th><th>ExecutorService</th></tr>
+ *   <caption>Strategy to concurrency mechanism</caption>
+ *   <tr><th>Class</th><th>Donahoo original</th><th>Concurrency mechanism</th></tr>
  *   <tr><td>{@link edu.arizona.ece696.echo.SingleThreadEchoServer}</td>
  *       <td>{@code TCPEchoServer}</td>
  *       <td>{@code Executors.newSingleThreadExecutor()}</td></tr>
  *   <tr><td>{@link edu.arizona.ece696.echo.ThreadPerConnectionEchoServer}</td>
  *       <td>{@code TCPEchoServerThread}</td>
- *       <td>{@code Executors.newCachedThreadPool()}</td></tr>
+ *       <td>raw {@code new Thread(...)} per connection (no executor exists for this)</td></tr>
  *   <tr><td>{@link edu.arizona.ece696.echo.ThreadPoolEchoServer}</td>
  *       <td>{@code TCPEchoServerPool}</td>
  *       <td>{@code Executors.newFixedThreadPool(n)}</td></tr>
