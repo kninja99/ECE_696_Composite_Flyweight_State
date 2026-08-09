@@ -101,6 +101,19 @@ class TrafficLightTest {
             assertSame(RedState.INSTANCE, light.getState());
             assertEquals(5, light.getRemainingSeconds());
         }
+
+        @Test
+        void completedCyclesCounts() {
+            TrafficLight light = new TrafficLight();
+            int ticksPerCycle = 5 + 4 + 1;
+            assertEquals(0, light.getCompletedCycles());
+            tick(light, ticksPerCycle - 1); // one tick short of finishing a cycle
+            assertEquals(0, light.getCompletedCycles());
+            tick(light, 1);                 // the transition back to red completes it
+            assertEquals(1, light.getCompletedCycles());
+            tick(light, ticksPerCycle);
+            assertEquals(2, light.getCompletedCycles());
+        }
     }
 
     @Nested

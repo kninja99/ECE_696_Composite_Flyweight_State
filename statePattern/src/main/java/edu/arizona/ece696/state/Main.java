@@ -39,19 +39,15 @@ public final class Main {
     public static void main(String[] args) throws InterruptedException {
         int cycles = parseCycles(args);
 
-        // One full cycle is the sum of every phase's duration (5 + 4 + 1 = 10s),
-        // derived from the states themselves so it stays correct if durations change.
-        int ticksPerCycle = RedState.INSTANCE.durationSeconds()
-                + GreenState.INSTANCE.durationSeconds()
-                + YellowState.INSTANCE.durationSeconds();
-        int totalTicks = cycles * ticksPerCycle;
-
         System.out.println("Traffic light: running " + cycles
                 + " full cycle(s) (Red -> Green -> Yellow). Ctrl+C to stop early.");
         System.out.println("-".repeat(60));
 
+        // The client works only with the TrafficLight context: it displays the
+        // light and advances time, and asks the context how many cycles are done.
+        // It never references RedState/GreenState/YellowState.
         TrafficLight light = new TrafficLight();
-        for (int i = 0; i < totalTicks; i++) {
+        while (light.getCompletedCycles() < cycles) {
             System.out.println(light.render());
             Thread.sleep(TICK_MILLIS);
             light.tick();

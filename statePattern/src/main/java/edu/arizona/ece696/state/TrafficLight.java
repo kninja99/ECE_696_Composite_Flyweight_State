@@ -20,8 +20,10 @@ package edu.arizona.ece696.state;
  */
 public final class TrafficLight {
 
+    private final TrafficLightState startState;
     private TrafficLightState state;
     private int remainingSeconds;
+    private int completedCycles;
 
     /**
      * Creates a traffic light that starts in the red phase with its full duration
@@ -41,21 +43,27 @@ public final class TrafficLight {
         if (initialState == null) {
             throw new IllegalArgumentException("initialState must not be null");
         }
+        this.startState = initialState;
         this.state = initialState;
         this.remainingSeconds = initialState.durationSeconds();
+        this.completedCycles = 0;
     }
 
     /**
      * Advances the light by one second of logical time. The countdown for the
      * current phase decreases by one; when it reaches zero the light transitions
      * to the next phase (as decided by the current state) and the countdown is
-     * reset to the new phase's duration.
+     * reset to the new phase's duration. Returning to the phase the light started
+     * in counts as one completed cycle.
      */
     public void tick() {
         remainingSeconds--;
         if (remainingSeconds <= 0) {
             state = state.next();
             remainingSeconds = state.durationSeconds();
+            if (state == startState) {
+                completedCycles++;
+            }
         }
     }
 
@@ -84,6 +92,18 @@ public final class TrafficLight {
      */
     public boolean isIntersectionOpen() {
         return state.isIntersectionOpen();
+    }
+
+    /**
+     * The number of full cycles the light has completed &mdash; that is, how many
+     * times it has transitioned back to the phase it started in. Lets a client run
+     * "N full cycles" without knowing anything about the individual phases or their
+     * durations.
+     *
+     * @return the count of completed cycles
+     */
+    public int getCompletedCycles() {
+        return completedCycles;
     }
 
     /**
