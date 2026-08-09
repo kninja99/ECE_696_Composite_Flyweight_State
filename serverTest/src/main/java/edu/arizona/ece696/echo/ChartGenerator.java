@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.function.ToDoubleFunction;
 
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartUtils;
@@ -61,33 +62,69 @@ public final class ChartGenerator {
     static {
         STRATEGY_NAMES.put("SINGLE", "Single-threaded");
         STRATEGY_NAMES.put("THREADPERCONN", "Thread-per-connection");
-        STRATEGY_NAMES.put("POOL", "Thread pool");
+        // Thread pools are keyed POOL<size> (e.g. POOL10, POOL50) so several pool
+        // sizes can be compared as separate series. Any POOL<n> not listed here is
+        // still handled by displayName() below.
+        STRATEGY_NAMES.put("POOL10", "Thread pool (10)");
+        STRATEGY_NAMES.put("POOL50", "Thread pool (50)");
     }
+
+    /** Recognises a POOL<size> strategy key, capturing the size. */
+    private static final java.util.regex.Pattern POOL_KEY =
+            java.util.regex.Pattern.compile("^POOL(\\d+)$");
 
     /** Distinct colours per strategy, in the same order as {@link #STRATEGY_NAMES}. */
     private static final Color[] SERIES_COLORS = {
-        new Color(0xD1495B), // red   - single-threaded
-        new Color(0x2E86AB), // blue  - thread-per-connection
-        new Color(0x0EAD69)  // green - thread pool
+        new Color(0xD1495B), // red    - single-threaded
+        new Color(0x2E86AB), // blue   - thread-per-connection
+        new Color(0x0EAD69), // green  - thread pool (10)
+        new Color(0xE8871E), // orange - thread pool (50)
+        new Color(0x8E44AD), // purple - spare (extra pool sizes)
+        new Color(0x16A085)  // teal   - spare
     };
+
+    /** Human-readable series name for a strategy key, incl. any POOL&lt;n&gt;. */
+    private static String displayName(String key) {
+        String known = STRATEGY_NAMES.get(key);
+        if (known != null) {
+            return known;
+        }
+        java.util.regex.Matcher m = POOL_KEY.matcher(key);
+        if (m.matches()) {
+            return "Thread pool (" + m.group(1) + ")";
+        }
+        return key;
+    }
 
     private ChartGenerator() {
     }
 
-    /** One aggregated result: metrics for a single (strategy, clientCount) run. */
+    /**
+     * One aggregated result: metrics for a single (strategy, clientCount) run.
+     *
+     * <p>Latency and throughput are computed over <em>successful</em> samples
+     * only. Failed samples (connection refused, timeouts) are not real service
+     * times: counting them would drag the mean response time around and, worse,
+     * inflate throughput (a bottleneck fails fast, so failures would masquerade
+     * as high throughput). {@code meanLatencyMs} is {@code NaN} when a cell had no
+     * successful samples at all, so it is left off the chart rather than drawn as
+     * a misleading zero.</p>
+     */
     private static final class RunStats {
         final String strategyKey;
         final int clients;
-        final long samples;
-        final long errors;
-        final double throughputPerSec;
-        final double meanLatencyMs;
+        final long samples;          // total samples (successes + failures)
+        final long successSamples;   // samples with success=true
+        final long errors;           // samples with success=false
+        final double throughputPerSec; // goodput: successSamples / test window
+        final double meanLatencyMs;    // mean elapsed over successes, or NaN
 
-        RunStats(String strategyKey, int clients, long samples, long errors,
-                 double throughputPerSec, double meanLatencyMs) {
+        RunStats(String strategyKey, int clients, long samples, long successSamples,
+                 long errors, double throughputPerSec, double meanLatencyMs) {
             this.strategyKey = strategyKey;
             this.clients = clients;
             this.samples = samples;
+            this.successSamples = successSamples;
             this.errors = errors;
             this.throughputPerSec = throughputPerSec;
             this.meanLatencyMs = meanLatencyMs;
@@ -119,9 +156,9 @@ public final class ChartGenerator {
             if (rs != null) {
                 stats.add(rs);
                 System.out.printf(Locale.ROOT,
-                        "Parsed %-28s clients=%-4d samples=%-6d throughput=%7.2f req/s  meanRT=%7.2f ms  err=%.1f%%%n",
-                        jtl.getName(), rs.clients, rs.samples, rs.throughputPerSec,
-                        rs.meanLatencyMs, rs.errorPct());
+                        "Parsed %-28s clients=%-4d samples=%-6d ok=%-6d goodput=%7.2f req/s  meanRT=%8.2f ms  err=%.1f%%%n",
+                        jtl.getName(), rs.clients, rs.samples, rs.successSamples,
+                        rs.throughputPerSec, rs.meanLatencyMs, rs.errorPct());
             }
         }
         if (stats.isEmpty()) {
@@ -131,17 +168,21 @@ public final class ChartGenerator {
 
         writeSummaryCsv(new File(resultsDir, "summary.csv"), stats);
 
-        XYSeriesCollection throughput = buildDataset(stats, true);
-        XYSeriesCollection latency = buildDataset(stats, false);
+        XYSeriesCollection throughput = buildDataset(stats, rs -> rs.throughputPerSec);
+        XYSeriesCollection latency = buildDataset(stats, rs -> rs.meanLatencyMs);
+        XYSeriesCollection errorRate = buildDataset(stats, RunStats::errorPct);
 
         saveChart(new File(resultsDir, "throughput.png"),
                 "Echo Server Throughput vs. Concurrent Clients",
-                "Concurrent clients", "Throughput (requests / second)", throughput);
+                "Concurrent clients", "Throughput (successful requests / second)", throughput);
         saveChart(new File(resultsDir, "latency.png"),
                 "Echo Server Response Time vs. Concurrent Clients",
-                "Concurrent clients", "Mean response time (ms)", latency);
+                "Concurrent clients", "Mean response time of successes (ms)", latency);
+        saveChart(new File(resultsDir, "errorrate.png"),
+                "Echo Server Error Rate vs. Concurrent Clients",
+                "Concurrent clients", "Failed requests (%)", errorRate);
 
-        System.out.println("Wrote summary.csv, throughput.png and latency.png to "
+        System.out.println("Wrote summary.csv, throughput.png, latency.png and errorrate.png to "
                 + resultsDir.getAbsolutePath());
     }
 
@@ -188,8 +229,9 @@ public final class ChartGenerator {
             }
 
             long samples = 0;
+            long successSamples = 0;
             long errors = 0;
-            double elapsedSum = 0;
+            double elapsedSumSuccess = 0; // sum of elapsed for successful samples only
             long minStart = Long.MAX_VALUE;
             long maxEnd = Long.MIN_VALUE;
 
@@ -211,11 +253,18 @@ public final class ChartGenerator {
                     continue; // header repeated or junk row
                 }
                 samples++;
-                elapsedSum += elapsed;
+                // The whole test window (all samples) is the throughput denominator,
+                // matching JMeter's own definition.
                 minStart = Math.min(minStart, ts);
                 maxEnd = Math.max(maxEnd, ts + elapsed);
-                if (iSuccess >= 0 && iSuccess < f.length
-                        && !"true".equalsIgnoreCase(f[iSuccess].trim())) {
+
+                // A sample is a success unless there is a success column saying false.
+                boolean success = !(iSuccess >= 0 && iSuccess < f.length
+                        && !"true".equalsIgnoreCase(f[iSuccess].trim()));
+                if (success) {
+                    successSamples++;
+                    elapsedSumSuccess += elapsed; // latency: successes only
+                } else {
                     errors++;
                 }
             }
@@ -226,9 +275,14 @@ public final class ChartGenerator {
             }
 
             double windowSec = Math.max(1.0, (maxEnd - minStart)) / 1000.0;
-            double throughput = samples / windowSec;
-            double meanLatency = elapsedSum / samples;
-            return new RunStats(strategyKey, clients, samples, errors, throughput, meanLatency);
+            // Goodput: only successful requests count toward throughput, so a
+            // bottleneck that fails fast shows up as a drop, not a phantom spike.
+            double throughput = successSamples / windowSec;
+            double meanLatency = successSamples > 0
+                    ? elapsedSumSuccess / successSamples
+                    : Double.NaN;
+            return new RunStats(strategyKey, clients, samples, successSamples, errors,
+                    throughput, meanLatency);
         }
     }
 
@@ -241,16 +295,25 @@ public final class ChartGenerator {
         return -1;
     }
 
-    /** Builds an XY dataset: one series per strategy, X = clients, Y = metric. */
-    private static XYSeriesCollection buildDataset(List<RunStats> stats, boolean throughput) {
+    /**
+     * Builds an XY dataset: one series per strategy, X = clients, Y = the chosen
+     * metric. Points whose value is {@code NaN} are skipped, so a cell with no
+     * successful samples leaves a gap rather than a misleading zero.
+     */
+    private static XYSeriesCollection buildDataset(List<RunStats> stats,
+                                                   ToDoubleFunction<RunStats> metric) {
         // strategyKey -> (clients -> value), TreeMap keeps client counts ascending.
         Map<String, TreeMap<Integer, Double>> byStrategy = new LinkedHashMap<>();
         for (String key : STRATEGY_NAMES.keySet()) {
             byStrategy.put(key, new TreeMap<>());
         }
         for (RunStats rs : stats) {
+            double v = metric.applyAsDouble(rs);
+            if (Double.isNaN(v)) {
+                continue;
+            }
             byStrategy.computeIfAbsent(rs.strategyKey, k -> new TreeMap<>())
-                    .put(rs.clients, throughput ? rs.throughputPerSec : rs.meanLatencyMs);
+                    .put(rs.clients, v);
         }
 
         XYSeriesCollection dataset = new XYSeriesCollection();
@@ -259,7 +322,7 @@ public final class ChartGenerator {
             if (e.getValue().isEmpty()) {
                 continue;
             }
-            String display = STRATEGY_NAMES.getOrDefault(e.getKey(), e.getKey());
+            String display = displayName(e.getKey());
             XYSeries series = new XYSeries(display);
             for (Map.Entry<Integer, Double> p : e.getValue().entrySet()) {
                 series.add((double) p.getKey(), p.getValue());
@@ -319,12 +382,16 @@ public final class ChartGenerator {
         });
         try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(out.toPath(),
                 StandardCharsets.UTF_8))) {
-            pw.println("strategy,clients,samples,errors,errorPct,throughputPerSec,meanLatencyMs");
+            // goodputPerSec and meanRespMs are computed over SUCCESSFUL samples only.
+            pw.println("strategy,clients,samples,successes,errors,errorPct,goodputPerSec,meanRespMs");
             for (RunStats rs : stats) {
-                pw.printf(Locale.ROOT, "%s,%d,%d,%d,%.2f,%.2f,%.2f%n",
-                        STRATEGY_NAMES.getOrDefault(rs.strategyKey, rs.strategyKey),
-                        rs.clients, rs.samples, rs.errors, rs.errorPct(),
-                        rs.throughputPerSec, rs.meanLatencyMs);
+                String meanResp = Double.isNaN(rs.meanLatencyMs)
+                        ? "" // no successful samples
+                        : String.format(Locale.ROOT, "%.2f", rs.meanLatencyMs);
+                pw.printf(Locale.ROOT, "%s,%d,%d,%d,%d,%.2f,%.2f,%s%n",
+                        displayName(rs.strategyKey),
+                        rs.clients, rs.samples, rs.successSamples, rs.errors, rs.errorPct(),
+                        rs.throughputPerSec, meanResp);
             }
         }
     }

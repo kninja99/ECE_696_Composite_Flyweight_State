@@ -28,17 +28,18 @@
 
 .EXAMPLE
     ./run_load_tests.ps1
-    ./run_load_tests.ps1 -Port 5000 -PoolSize 50 -Duration 20 -Clients 5,10,50,100,500
+    ./run_load_tests.ps1 -Port 5000 -PoolSizes 10,50 -Duration 20 -Clients 5,10,50,100,500
 #>
 
 [CmdletBinding()]
 param(
-    [int]    $Port     = 5000,
-    [int]    $PoolSize = 50,
-    [int]    $Duration = 20,           # seconds of load per (strategy, clients) cell
-    [int]    $RampUp   = 2,            # seconds to ramp all clients up
-    [int[]]  $Clients  = @(5, 10, 50, 100, 500),
-    [string] $JMeter   = 'jmeter'      # path to the JMeter launcher
+    [int]    $Port      = 5000,
+    [int[]]  $PoolSizes = @(10, 50),   # one thread-pool run (and chart series) per size
+    [int]    $Duration  = 20,          # seconds of load per (strategy, clients) cell
+    [int]    $RampUp    = 2,           # seconds to ramp all clients up
+    [int[]]  $Clients   = @(5, 10, 50, 100, 500),
+    [string] $JMeter    = 'jmeter',    # path to the JMeter launcher
+    [string] $ResultsDir = ''          # defaults to <project>/results
 )
 
 $ErrorActionPreference = 'Stop'
@@ -46,15 +47,17 @@ $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ProjectRoot
 
 $Classes    = Join-Path $ProjectRoot 'target/classes'
-$ResultsDir = Join-Path $ProjectRoot 'results'
+if (-not $ResultsDir) { $ResultsDir = Join-Path $ProjectRoot 'results' }
 $Jmx        = Join-Path $ProjectRoot 'jmeter/echo_load_test.jmx'
 
-# Strategy key -> fully-qualified server class. Keys must match the ones
-# ChartGenerator recognises (SINGLE, THREADPERCONN, POOL).
-$Strategies = [ordered]@{
-    'SINGLE'        = 'edu.arizona.ece696.echo.SingleThreadEchoServer'
-    'THREADPERCONN' = 'edu.arizona.ece696.echo.ThreadPerConnectionEchoServer'
-    'POOL'          = 'edu.arizona.ece696.echo.ThreadPoolEchoServer'
+# Ordered list of server runs. Each becomes one chart series, so keys must match
+# what ChartGenerator recognises: SINGLE, THREADPERCONN, and POOL<size> (one run
+# per requested thread-pool size, e.g. POOL10 and POOL50).
+$Runs = New-Object System.Collections.Generic.List[object]
+$Runs.Add([pscustomobject]@{ Key = 'SINGLE';        Class = 'edu.arizona.ece696.echo.SingleThreadEchoServer';        Args = @("$Port") })
+$Runs.Add([pscustomobject]@{ Key = 'THREADPERCONN'; Class = 'edu.arizona.ece696.echo.ThreadPerConnectionEchoServer'; Args = @("$Port") })
+foreach ($ps in $PoolSizes) {
+    $Runs.Add([pscustomobject]@{ Key = ("POOL{0}" -f $ps); Class = 'edu.arizona.ece696.echo.ThreadPoolEchoServer'; Args = @("$Port", "$ps") })
 }
 
 function Test-Command($name) {
@@ -173,10 +176,10 @@ function Start-Server([string]$class, [string[]]$serverArgs, [string]$logTag) {
 }
 
 # --- Main sweep ----------------------------------------------------------------
-foreach ($key in $Strategies.Keys) {
-    $class = $Strategies[$key]
-    $serverArgs = @("$Port")
-    if ($key -eq 'POOL') { $serverArgs = @("$Port", "$PoolSize") }
+foreach ($run in $Runs) {
+    $key        = $run.Key
+    $class      = $run.Class
+    $serverArgs = $run.Args
 
     foreach ($c in $Clients) {
         Write-Host ("=== {0}  clients={1} ===" -f $key, $c) -ForegroundColor Green

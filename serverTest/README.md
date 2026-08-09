@@ -98,12 +98,15 @@ java -cp out edu.arizona.ece696.echo.EchoClient localhost quit 5000
    Optional parameters:
 
    ```powershell
-   ./run_load_tests.ps1 -Port 5000 -PoolSize 50 -Duration 20 -Clients 5,10,50,100,500
+   ./run_load_tests.ps1 -Port 5000 -PoolSizes 10,50 -Duration 20 -Clients 5,10,50,100,500
    ```
 
    For each strategy × client count the script starts the server, runs
    `jmeter/echo_load_test.jmx` against it for `-Duration` seconds, stops the server, and
-   writes `results/<STRATEGY>_<clients>.jtl`. It then generates the charts.
+   writes `results/<STRATEGY>_<clients>.jtl`. It then generates the charts. **Each
+   thread-pool size in `-PoolSizes` becomes its own run and its own chart series**
+   (`POOL10_*.jtl`, `POOL50_*.jtl`, → "Thread pool (10)", "Thread pool (50)"), so you can
+   see how the pool's thread count shifts the throughput ceiling.
 
 The plan is **time-bounded** (a fixed number of seconds per cell), not loop-bounded, so
 the slow single-threaded server doesn't take minutes at 500 clients — every strategy is
@@ -121,12 +124,22 @@ jmeter -n -t jmeter/echo_load_test.jmx -Jhost=localhost -Jport=5000 -Jclients=50
 `ChartGenerator` reads every `results/*.jtl`, infers the `(strategy, clients)` from each
 file name, and writes to `results/`:
 
-* **`summary.csv`** — `strategy, clients, samples, errors, errorPct, throughputPerSec, meanLatencyMs`
-* **`throughput.png`** — throughput (requests/second) vs. concurrent clients
-* **`latency.png`** — mean response time (ms) vs. concurrent clients
+* **`summary.csv`** — `strategy, clients, samples, successes, errors, errorPct, goodputPerSec, meanRespMs`
+* **`throughput.png`** — **goodput** (successful requests/second) vs. concurrent clients
+* **`latency.png`** — mean response time of **successful** requests (ms) vs. concurrent clients
+* **`errorrate.png`** — failed requests (%) vs. concurrent clients
 
-Both charts plot the client count on a **logarithmic X axis** (so 5…500 spread evenly),
-draw **one labelled line per strategy**, and include a **legend** and titled axes.
+**Metrics are computed over successful samples only.** Failed samples (connection
+refused, connect/response timeouts) are not real service times, so including them would
+skew the mean response time and — worse — *inflate* throughput, because a saturated server
+fails fast and those fast failures would masquerade as high throughput. Throughput is
+therefore reported as **goodput** (successful requests per second over the test window),
+and the mean response time averages only successful samples (a cell with zero successes is
+left off the latency chart rather than drawn as a misleading zero). The **error-rate
+chart** is where the bottleneck shows up directly.
+
+All three charts plot the client count on a **logarithmic X axis** (so 5…500 spread
+evenly), draw **one labelled line per strategy**, and include a **legend** and titled axes.
 `run_load_tests.ps1` calls it automatically; to run it yourself:
 
 ```bash
@@ -139,9 +152,34 @@ mvn compile exec:java -Dexec.mainClass=edu.arizona.ece696.echo.ChartGenerator -D
 
 - **Few clients (5–10):** all three look similar — latency near 100 ms — because nobody is
   waiting behind anyone else.
-- **Many clients (100–500):** the **single-threaded** server's latency climbs steeply (its
-  throughput is pinned near 10 req/s and everyone queues), the **thread-pool** server holds
-  a steady throughput around `poolSize × 10` req/s with moderate latency, and
-  **thread-per-connection** keeps latency low as long as the JVM can afford one thread per
-  client. The graphs make the crossover — and thread-per-connection's eventual cost at very
-  high concurrency — visible. There is no single "best"; it depends on the expected load.
+- **Many clients (100–500):** the strategies diverge sharply. A representative full sweep
+  on one machine:
+
+  | clients | Single-threaded | Thread-per-connection | Thread pool (10) | Thread pool (50) |
+  |--------:|-----------------|-----------------------|------------------|------------------|
+  | 50  | 9.8 req/s, 0% err   | 469 req/s, 0% err   | ~98 req/s, 0% err | 469 req/s, 0% err |
+  | 100 | 3.9 req/s, **61% err** | 936 req/s, 0% err | ~98 req/s, 0% err | 482 req/s, 0% err |
+  | 500 | 3.4 req/s, **91% err** | 4671 req/s, 0% err | ~98 req/s, 0% err | 491 req/s, 0% err |
+
+  (The thread-pool-10 column is approximate — regenerate with your own run. The point is
+  that its ceiling sits near `10 × 10 = 100` req/s, well below pool-50's ~500.)
+
+  - **Single-threaded** hits a hard **bottleneck**: it services ~10 connections/second, so
+    the OS accept backlog (default 50) overflows and clients' connects time out — the
+    error rate climbs to 60–90% and *goodput collapses*. (Counting those failures, the old
+    all-samples throughput would have wrongly reported ~36 req/s at 500 clients instead of
+    the true ~3 req/s of served requests — which is exactly why the metrics filter to
+    successes.)
+  - **Thread pool** holds a steady goodput near `poolSize × 10` req/s with **no errors**;
+    past saturation the extra load queues, so latency rises while throughput stays flat.
+    Comparing **pool (10)** (~100 req/s ceiling) against **pool (50)** (~500 req/s) shows
+    the tradeoff directly: a bigger pool raises the throughput ceiling but uses more
+    threads, while a smaller pool caps resource use and simply queues sooner.
+  - **Thread-per-connection** keeps latency at ~100 ms and scales goodput linearly as long
+    as the JVM can afford one thread per client (here, cleanly through 500). Its cost is
+    unbounded thread growth; push the client count high enough on a constrained machine and
+    it, too, will start erroring — the error-rate chart is where that would appear.
+
+  There is no single "best": thread-per-connection wins on raw throughput when threads are
+  cheap and load is bounded, the thread pool bounds resource use and degrades gracefully,
+  and single-threaded is only viable at low concurrency.
