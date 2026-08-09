@@ -1,0 +1,752 @@
+The goal for this assignment is to consider Dr.Donahoos root index code and do the following
+
+1. implement an echo server that accepts 4 characters to stop for 100ms with 3 strategies
+2. the three strategies should be (Single threaded, thread per connection, thread pool)
+3. add this to all servers or to the echo protocol to simulate overhead
+
+  if(recvMsgSize >= 4) { // for quit
+    try {
+        Thread.sleep(100);
+    } catch(InterruptedException ex) {
+        Thread.currentThread().interrupt();
+    }
+    break;
+  }
+Links to Dr.Donahoos code for context
+
+* Single thread (→ jeffdonahoo.github.io)
+* See other class parts at the root index (→ jeffdonahoo.github.io)
+* Thread per connection (→ jeffdonahoo.github.io)
+* Thread pool servers (→ jeffdonahoo.github.io)
+
+
+the simulated overhead will add a delay of 100ms at 4 chars or greater.
+
+4. Convert all examples to use executor service in java
+
+
+5. Perform a load test  on the echo server with 5/10/50/100/500 clients at once using Apache JMeter.
+
+
+This code should also be able to generate graphs for comparison between each method to determine which method is best in certain scenarios. Graphs should have clear labels and legends.
+
+
+the project should be written in java and be able to be imported to eclipse via a maven project
+
+I'll start by exploring the existing codebase to understand what's there.
+
+
+Found files, ran 2 commands
+Good — there's an existing Composite Maven project I can use as a convention template, and serverTest/ is empty (where the new work goes). Let me read the existing project's Maven/Eclipse config and fetch Dr. Donahoo's reference code.
+
+
+Read 3 files, used a tool
+Now let me fetch Dr. Donahoo's reference code (the three server variants plus the root index of class parts).
+
+
+Browsed the web
+Following the redirects:
+
+
+Browsed the web
+I have the three servers. Now the key file — EchoProtocol.java (contains the recv loop where overhead is added) — plus the executor server and client:
+
+
+Browsed the web
+I have all the reference code and understand the design. Let me check the local toolchain (Java/Maven/JMeter) and the existing project conventions to make the plan accurate.
+
+
+Ran a command, read 2 files
+I now have the full picture. Key findings:
+
+serverTest/ is empty — that's where the new Maven project goes. The sibling Composite/ project is my convention template (groupId edu.arizona.ece696, Java 17, m2e/Eclipse import, JUnit 5).
+Java 26 is installed; no mvn and no jmeter on PATH — the existing workflow builds via Eclipse's bundled Maven (m2e), and JMeter will need to be installed to run the load tests.
+I have all of Dr. Donahoo's reference code: TCPEchoServer (single), TCPEchoServerThread (thread-per-conn), TCPEchoServerPool (fixed pool), TCPEchoServerExecutor, and crucially EchoProtocol (the Runnable with the in.read loop — where the 100ms/4-char overhead belongs).
+The clean unifying design: one EchoProtocol carrying the overhead, and one executor-based server parameterized by a Strategy (single-thread executor = single-threaded, cached pool = thread-per-connection, fixed pool = thread pool) — which is exactly how "convert all to ExecutorService" reconciles with "three strategies."
+
+Two design choices genuinely change the deliverable, so let me confirm them before finalizing.
+
+How should the three strategies (single-threaded / thread-per-connection / thread-pool) be organized in code, given the requirement to convert everything to ExecutorService?
+
+Three fully separate classes
+
+How should the comparison graphs be generated (clear labels + legends required)?
+
+JFreeChart via Maven (Recommended)
+
+Both answers noted: three fully separate executor-based server classes (mirroring Donahoo's three files) and JFreeChart via Maven for the graphs. Let me write the plan.
+
+Created
+the-goal-for-this-noble-dongarra.md
++145
+-0
+The plan is written. Here's the summary before you approve.
+
+What I'll build (in the empty serverTest/ Maven project)
+One shared protocol carrying the overhead — EchoProtocol (Donahoo's Runnable) with the 100 ms sleep + connection close triggered when a read returns ≥ 4 bytes, added right after the echo.
+
+Three fully separate, executor-based server classes (your choice) mirroring the textbook:
+
+Class	Donahoo original	Executor
+SingleThreadEchoServer	TCPEchoServer	newSingleThreadExecutor()
+ThreadPerConnectionEchoServer	TCPEchoServerThread	newCachedThreadPool()
+ThreadPoolEchoServer	TCPEchoServerPool	newFixedThreadPool(n)
+Each keeps its own accept() loop but dispatches via service.execute(...) — that's how "three strategies" and "convert everything to ExecutorService" reconcile.
+
+Load testing — a parameterized JMeter TCP-sampler plan (echo_load_test.jmx) plus a run_load_tests.ps1 driver that sweeps all three servers × {5,10,50,100,500} clients, emitting one JTL per run.
+
+Graphs — ChartGenerator (JFreeChart via Maven, resolved by Eclipse m2e like JUnit) reads the JTLs and produces throughput.png and latency.png (client count on X, one labeled/legended line per strategy) plus a summary.csv.
+
+Plus: EchoClient smoke tester, a JUnit test asserting echo correctness + the ≥100 ms overhead, pom.xml/.gitignore/README.md matching the Composite project's conventions, and Eclipse-Maven importability.
+
+Things to note
+JMeter isn't installed on this machine — the README will cover installing it; the .jmx + driver are ready to run once it's on PATH.
+No mvn on PATH either — I'll verify the servers/client/protocol end-to-end with the JDK directly (javac/java, per your Composite project's smoke-test pattern); the JFreeChart-dependent ChartGenerator is verified via Eclipse/m2e or Maven if you have it.
+Found tools
+Proposed plan
+Plan approved. Let me set up task tracking and start building.
+
+
+Used 8 tools
+Starting with the scaffold.
+
+
+Created 3 files, used a tool
++134
+-0
+Now the shared EchoProtocol.
+
+
+Created EchoProtocol.java, used 2 tools
++97
+-0
+Now the three server classes and the client.
+
+
+Created 4 files, used 2 tools
++227
+-0
+Let me compile the core classes now (JDK-only, no JFreeChart needed) to catch errors early.
+
+Compiled core classes with javac
+Core classes compile. Now the ChartGenerator.
+
+
+Created ChartGenerator.java, used 2 tools
++338
+-0
+ChartGenerator uses the JFreeChart API, which I can't compile with plain javac unless the jar is present. Let me check for a local Maven repo/cache that may already have it.
+
+Look for local jfreechart jar / maven
+~/.m2 exists but JFreeChart isn't cached and there's no mvn/jmeter on PATH — matching the approved plan, ChartGenerator is verified via Eclipse's m2e (which resolves JFreeChart on first build, like JUnit in the Composite project). I carefully reviewed every JFreeChart 1.5.4 API call it uses. Let me just clean up one awkward helper name.
+
+Edited
+ChartGenerator.java
++2
+-2
+Now the JMeter test plan and the PowerShell driver.
+
+
+Created 2 files, used 2 tools
++222
+-0
+Now the JUnit test and README.
+
+
+Created EchoProtocolTest.java, used 2 tools
++172
+-0
+Let me remove the unused helper to keep the test clean.
+
+Edited
+EchoProtocolTest.java
++0
+-10
+Now the README.
+
+Created
+README.md
++147
+-0
+Now verification. Let me recompile everything (core) and run the JUnit tests. First let me check whether JUnit is available in ~/.m2 (from the Composite project build) so I can run tests without Maven.
+
+
+Ran a command, used 2 tools
+JUnit 5.10.2 is cached locally. Let me check for the launcher + opentest4j, then compile the test and run the real end-to-end behavior.
+
+Checked for JUnit launcher and opentest4j
+All JUnit pieces are cached locally. I'll write a tiny launcher and run the unit tests, plus do the real end-to-end run. First the launcher:
+
+Created RunTests.java, ran a command
++28
+-0
+The test class is package-private (JUnit convention). I'll select it by name string instead of class literal.
+
+
+Edited RunTests.java, ran a command
++1
+-1
+All 3 unit tests pass. Now the real end-to-end run — echo correctness, the ~100 ms overhead, and the single-threaded-vs-parallel contrast:
+
+End-to-end: echo, overhead, concurrency contrast across strategies
+Everything works exactly as designed. The relative ordering is the whole point of the assignment, and it's clear:
+
+Strategy	5 concurrent clients	Expectation
+Single-threaded	658 ms	serialized (~5×100 ms)
+Thread-pool (size 2)	463 ms	~⌈5/2⌉×100 ms
+Thread-per-connection	283 ms	parallel (~100 ms)
+(Absolute numbers are inflated by launching 5 separate java client processes; JMeter uses threads, so its numbers will be tighter. The ordering — single > pool > thread-per-conn — is the takeaway.) Echo is correct and the ≥4-byte overhead shows up as the 123 ms round trip.
+
+Let me clean up the stray out/ dir my first compile-check left in the project tree.
+
+
+Ran a command, used a tool
+The project is complete and verified. Here's what was built in serverTest/.
+
+What's there
+Shared protocol with the overhead — EchoProtocol.java: Donahoo's echo handler (a Runnable) that echoes bytes back and, on any read of ≥ 4 bytes, sleeps 100 ms and closes. The overhead lives here, so all three strategies exercise identical work.
+
+Three separate executor-based servers (your chosen layout), each mirroring a Donahoo file but converted to ExecutorService:
+
+SingleThreadEchoServer.java → newSingleThreadExecutor()
+ThreadPerConnectionEchoServer.java → newCachedThreadPool()
+ThreadPoolEchoServer.java → newFixedThreadPool(n)
+Load test — echo_load_test.jmx (parameterized, time-bounded TCP-sampler plan) driven by run_load_tests.ps1, which sweeps all 3 servers × {5,10,50,100,500} clients and then makes the graphs.
+
+Graphs — ChartGenerator.java (JFreeChart) reads the JMeter .jtls and writes summary.csv, throughput.png, latency.png — labelled axes, log-scaled X, one legended line per strategy.
+
+Plus EchoClient.java, EchoProtocolTest.java, pom.xml, and README.md, all matching the sibling Composite project's conventions (groupId edu.arizona.ece696, Java 17, m2e/Eclipse import).
+
+Verification done
+✅ All core classes + client compile with javac (JDK 26).
+✅ 3/3 JUnit tests pass (echo correctness, the ≥4-byte 100 ms overhead + close, full-message echo).
+✅ End-to-end run of all three real servers: echo correct, overhead visible (123 ms RTT), and the strategy ordering demonstrated (single 658 ms > pool-2 463 ms > thread-per-conn 283 ms for 5 concurrent clients).
+
+
+What you do next
+Import into Eclipse: File ▸ Import ▸ Existing Maven Projects ▸ serverTest. m2e downloads JFreeChart + JUnit on first build (this is where ChartGenerator compiles — it needs JFreeChart, which isn't in your local ~/.m2 yet, so I verified its API by review rather than javac).
+Install JMeter and add its bin/ to PATH (it's not currently installed).
+Run the sweep:
+./run_load_tests.ps1
+That produces the .jtl results and the comparison PNGs in results/.
+
+One note on the smoke client: EchoClient reads until the server closes, so use a 4+ character word (e.g. quit) — a shorter word never triggers the close and the client would wait. This is documented in the README; JMeter's plan already sends quit.
+
+Want me to save a short memory noting this project's toolchain quirks (Eclipse/m2e workflow, no CLI mvn/jmeter) for future sessions?
+
+line 170 in chartGenerator.java is throwing the following error The method newBufferedReader(Path, Charset) in the type Files is not applicable for the arguments (File, Charset)
+
+try (BufferedReader in = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+            String header = in.readLine();
+            if (header == null) {
+                System.err.println("Skipping empty file " + file.getName());
+                return null;
+            }
+
+Files.newBufferedReader takes a Path, but file is a File. Fix is file.toPath().
+
+Edited
+ChartGenerator.java
++1
+-1
+Good catch — that's a real bug in the one file I couldn't javac locally. Since you now have JFreeChart resolved in Eclipse, let me re-scan the whole file for any other similar issues so you don't hit them one at a time.
+
+Read
+ChartGenerator.java
+Eclipse's m2e just resolved JFreeChart for you (that's how it's compiling ChartGenerator), so the jar should now be in your local ~/.m2. If so, I can compile it here and catch anything else. Let me check.
+
+Checked if JFreeChart jar now cached
+JFreeChart is now cached. Let me compile ChartGenerator against it and actually exercise it on synthetic JTL data to confirm the whole chart path works end-to-end.
+
+
+Created mkjtl.ps1, ran a command
++27
+-0
+ChartGenerator compiled cleanly (no more API errors). The parse "failure" is an artifact of my test data: Windows PowerShell's Set-Content -Encoding UTF8 prepends a BOM, so timeStamp became \uFEFFtimeStamp. Real JMeter CSV has no BOM — but stripping a leading BOM is a free robustness win, so I'll add it, then re-test.
+
+Edited
+ChartGenerator.java
++4
+-0
+Let me use the explicit \uFEFF escape instead of a literal (invisible) BOM character in source.
+
+
+Edited and read ChartGenerator.java
+The literal BOM in the char comparison is functionally correct ('\uFEFF'), just invisible in source — the editor can't round-trip it for a second edit. It compiles and does the job. Let me recompile and confirm it now parses the BOM'd test files and produces the charts.
+
+Recompile ChartGenerator and run on synthetic data
+ChartGenerator now compiles and runs the full pipeline: all 15 files parsed, summary.csv + both PNGs written, sorted and labeled correctly. Let me view the generated chart to confirm the axes, log scale, and legend render well.
+
+Read
+latency.png
+
+Fixed and fully verified. The chart renders exactly as the assignment requires — title, labeled axes, logarithmic X (5→500), a legend, and three color/marker-distinct series:
+
+![latency chart works]
+
+What I fixed
+The compile error you hit — Files.newBufferedReader needs a Path, so file → file.toPath() at ChartGenerator.java:170.
+A second latent issue I caught while verifying — added a leading UTF-8 BOM strip on the header line, so ChartGenerator is robust to BOM'd CSVs.
+Now fully verified (I compiled against the JFreeChart your Eclipse just cached)
+✅ ChartGenerator compiles against jfreechart-1.5.4.
+✅ Full chart pipeline runs end-to-end on sample data: parses all 15 .jtl files, writes summary.csv, throughput.png, latency.png.
+✅ The PNG above confirms clear labels + legend.
+That closes the last gap — the one file I couldn't javac earlier (no JFreeChart on this machine at the time) is now genuinely tested rather than just reviewed. Both the File/Path bug and the BOM edge case are the kind of thing that only surfaces at compile/run time, so it was worth doing the real build.
+
+You should be able to re-run ChartGenerator in Eclipse now (Run As ▸ Java Application, program argument results) once you have JMeter output — or it'll run automatically at the end of run_load_tests.ps1.
+
+Want me to save a quick memory about this project's toolchain (Eclipse/m2e workflow, no CLI mvn/jmeter, JDK 26) so future sessions don't re-discover it?
+
+install jmeter for me and add it to my path
+
+I have your go-ahead to download and install, so let me start by checking what's available on your machine (package managers are the cleanest path).
+
+Checked package managers and Java
+Both winget and choco are present, but JMeter isn't reliably in winget and choco needs admin elevation (which I can't do non-interactively). The clean, admin-free path is the official Apache ZIP into your user profile + a User PATH entry. Let me confirm the download first (URL, reachability, size).
+
+Verified JMeter download URL and size
+Confirmed: Apache JMeter 5.6.3, 86.4 MB, official Apache CDN. Downloading it plus its SHA-512 checksum for integrity verification.
+
+Downloaded JMeter zip and verified SHA-512
+Checksum verified against the official Apache signature. Now extracting to your user profile and adding it to your User PATH.
+
+Extracted JMeter and added bin to User PATH
+Installed and on PATH. Now let me verify jmeter actually launches (this also checks whether it needs JAVA_HOME set).
+
+Ran jmeter --version to verify launch
+JMeter 5.6.3 launches cleanly and works with your existing Java (no JAVA_HOME needed — the warnings are harmless deprecation notices JMeter prints on every run).
+
+Done — JMeter is installed and on your PATH
+Version	Apache JMeter 5.6.3 (official Apache CDN, SHA-512 verified)
+Install location	C:\Users\kcdam\AppData\Local\Programs\apache-jmeter-5.6.3
+On PATH	...\apache-jmeter-5.6.3\bin added to your User PATH (no admin needed)
+Launch check	jmeter --version → prints the 5.6.3 banner, exit 0
+One thing to note: I updated the PATH for the current session so I could test it, but already-open terminals and Eclipse won't see it until they're restarted. Open a new PowerShell window and jmeter --version will work there.
+
+Once you've reopened a terminal, you can run the whole load-test sweep from the serverTest folder:
+
+./run_load_tests.ps1
+That will start each server, run JMeter at 5/10/50/100/500 clients, and generate results/summary.csv, throughput.png, and latency.png — the real versions of the sample chart I showed earlier.
+
+Want me to kick off a quick smoke run of the driver (e.g. just the single-threaded server at 5 and 10 clients with a short duration) to confirm the full JMeter→charts pipeline works end-to-end on your machine before you run the full sweep?
+
+when trying to use the power shell script I get the following error
+
+Server edu.arizona.ece696.echo.SingleThreadEchoServer did not start listening on port 5000.
+At C:\Users\kcdam\Documents\UofA\UofA_Summer_2026\ECE696B\Codeing
+Assignments\ECE_696_Composite_Flyweight_State\serverTest\run_load_tests.ps1:110 char:9
++         throw "Server $class did not start listening on port $Port."
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : OperationStopped: (Server edu.ariz...g on port 5000.:String) [], RuntimeException
+    + FullyQualifiedErrorId : Server edu.arizona.ece696.echo.SingleThreadEchoServer did not start listening on port 50
+   00.
+
+Let me diagnose why the server process failed to bind. I'll check the compiled classes, whether port 5000 is already taken or in a Windows-reserved range, and capture the server's actual error output.
+
+Diagnose classes, port 5000 usage and reserved ranges
+Key findings: the classes are compiled, port 5000 is not reserved and nothing is listening on it — but there are 3 leftover java processes. Before touching them I need to see what they are (one could be Eclipse). Let me inspect their command lines and reproduce the server start with error output captured.
+
+Showed command lines of running java processes
+Found it. The 3 leftover java processes are my test servers from earlier (ports 5099/5100/5101) — not the cause, but I'll clean them up. The real bug: your project path contains a space (Codeing Assignments), and PowerShell's Start-Process -ArgumentList doesn't quote the classpath, so java receives a broken -cp and can't find the class → it exits → nothing listens on 5000. My earlier test passed only because I ran from a space-free scratch path.
+
+Let me confirm the diagnosis, then fix the script. First, reproducing with the real (spaced) path:
+
+Reproduce broken vs fixed Start-Process classpath quoting
+Diagnosis confirmed: unquoted classpath → java treats Assignments\... as the main class. Quoting the classpath fixes it. Now let me patch the script's Start-Server function and also capture server output so any future failure is visible.
+
+
+Read and edited run_load_tests.ps1
++12
+-4
+Now update the call site to pass a log tag:
+
+Edited
+run_load_tests.ps1
++1
+-1
+Let me add the server logs to .gitignore:
+
+Edited
+.gitignore
++1
+-0
+Now clean up my leftover test servers and run a real reduced smoke test of the fixed script (all 3 strategies, 5 clients, short duration) to prove the full JMeter→charts pipeline works on your machine:
+
+Failed to run
+Clean up leftovers and run reduced smoke test of fixed script
+The User PATH change is persistent, but this pre-existing shell session doesn't see it yet (same reason you'd need a fresh terminal). Let me add the bin dir to this session's PATH and re-run:
+
+
+Ran a command
+Big progress — the servers now start and JMeter runs. But every run recorded 0 samples in 0 seconds, so the thread group is exiting immediately. That's a JMeter quirk in my plan: for an infinite loop the canonical config is continue_forever=false with loops=-1. I set continue_forever=true, which makes the loop controller report "done" instantly. Let me fix that.
+
+Edited
+echo_load_test.jmx
++1
+-1
+Now re-run the smoke test to confirm samples actually flow and charts generate from real data:
+
+
+Ran a command
+That failure was my own doing — piping 2>&1 promoted JMeter's harmless stderr warnings into terminating errors under the script's Stop preference. Running it plainly (as you would) and then inspecting the results:
+
+
+Ran a command
+Still 0 samples even with the loop fix, so the thread group isn't executing the sampler at all. Let me read JMeter's own run log and the server logs to see what's actually happening (thread counts, property resolution, connection attempts).
+
+Inspected JMeter run log and server logs
+Now the real root causes are visible — two of them:
+
+Properties weren't expanded: JMeter logged port=$Port, clients=$c literally. PowerShell didn't interpolate the $c/$Port in the -Jclients=$c tokens, so JMeter got the string $c for thread count → Starting 0 threads → 0 samples.
+BindException: Address already in use on 5000 — a leftover listener (from my manual repro) was holding the port, and Wait-ForPort connected to that impostor, so Start-Server didn't notice its own server had crashed.
+Let me fix both in the script: pass JMeter args as an explicitly-quoted array, and make Start-Server detect when its own process died. First let me see the current lines.
+
+Read
+run_load_tests.ps1
+Let me fix Start-Server to detect a crashed process, and replace the JMeter call with an explicitly-quoted argument array so the properties actually expand.
+
+Edited
+run_load_tests.ps1
++20
+-4
+Now let me clear whatever leftover is holding port 5000 (verifying it's one of our echo servers before killing), then re-run the smoke test:
+
+
+Ran a command
+The property fix worked (SINGLE_5 ran without the 0-sample issue), but a new problem surfaced: SINGLE_50 got BindException because the previous cell's server wasn't actually killed. That strongly suggests the java on PATH is an Oracle launcher stub — Start-Process returns the stub's PID, but the real JVM runs as a child that keeps holding the port. Let me confirm the process tree and check whether SINGLE_5 got real samples:
+
+
+Ran a command
+Root cause nailed. Two confirmations:
+
+SINGLE_5.jtl has 63 real samples, success=true, elapsed≈105 ms — the property fix works and the echo+overhead is measured correctly. 🎉
+The java on PATH is an Oracle launcher stub: Start-Process PID 29328 exits immediately (HasExited=True), while the real JVM (29692) gets re-parented to 41460 — so the PID we hold is useless for killing, and taskkill /T on it leaves port 5000 held. That's the whole BindException cascade.
+The robust fix: don't track the server by the stub PID at all — track it by whoever is listening on the port (verified to be one of our echo servers before killing). Let me rewrite that section of the script. First the exact current text:
+
+Read
+run_load_tests.ps1
+(88–159, 156–167)
+Now I'll rewrite the whole server-management section to track servers by port ownership (launcher-stub-proof), with safety checks that never kill a non-echo process:
+
+Edited
+run_load_tests.ps1
++56
+-14
+Now update the loop to use the returned server PID and Stop-Tree:
+
+Edited
+run_load_tests.ps1
++5
+-4
+Now let me clear the still-listening leftover on 5000 (the one from my tree test) and re-run the smoke test — this time exercising the multi-cell transition that failed before:
+
+
+Ran a command
+That abort was again my own output-capture (*>) colliding with the script's Stop preference and JMeter's stderr warnings — a PowerShell 5.1 gotcha. But it's worth hardening the script itself so capturing its output (e.g. for grading) can't abort it. Let me wrap the JMeter call so its harmless stderr never throws:
+
+Edited
+run_load_tests.ps1
++9
+-1
+Now re-run the smoke test plainly (the way you'd run it) and inspect the artifacts afterward:
+
+Ran smoke test plainly with hardened script
+The full pipeline now works end-to-end on your machine — script exit: 0, all 6 cells ran, and the charts generated. The numbers are textbook-perfect and tell exactly the story the assignment is about:
+
+Strategy	5 clients	50 clients
+Single-threaded	9.8 req/s, 460 ms	9.8 req/s, 3716 ms (serializes → latency explodes)
+Thread pool (50)	45 req/s, 102 ms	449 req/s, 102 ms
+Thread-per-conn	45 req/s, 102 ms	450 req/s, 101 ms
+
+Single-threaded is pinned at ~10 req/s (one connection per 100 ms) while the concurrent strategies scale to ~450 req/s with flat ~100 ms latency. Zero errors throughout.
+
+What was broken and what I fixed in run_load_tests.ps1
+Your original error was one symptom of several real bugs — all now fixed and verified:
+
+Classpath with spaces — Start-Process didn't quote the -cp, so java read Assignments\… as the main class. → Quote the classpath.
+JMeter properties not expanding — bare -Jclients=$c tokens sent the literal text $c, so JMeter ran 0 threads. → Build the args as an explicitly-quoted array.
+Infinite-loop config — continue_forever=true made the thread group exit instantly. → continue_forever=false + loops=-1.
+The big one — Oracle javapath\java.exe is a launcher stub: the PID from Start-Process exits immediately and the real JVM is re-parented, so the server was never actually killed → BindException on the next cell. → The script now tracks each server by who's listening on the port (verified to be one of our echo servers before killing) and waits for the port to free between cells.
+stderr hardening — JMeter's harmless JVM warnings could abort the script if its output is captured. → Relaxed the error preference around the JMeter call.
+The generated throughput.png, latency.png, and summary.csv are in serverTest/results/.
+
+You're ready to run the full sweep in a fresh terminal (so it picks up JMeter on PATH):
+
+./run_load_tests.ps1
+That runs all 3 strategies × {5,10,50,100,500} clients at 20 s each (~7–8 minutes). Note that at 500 clients the single-threaded server will show very high latency (each client waits behind ~10 req/s) — that's the expected, and pedagogically the whole point, result.
+
+Want me to kick off the full 500-client sweep now, or leave that to you?
+
+when looking at the charts and charting functionality I notice that mean latency is computed as elapsed sum / samples, I belive that we are counting failures in this calculation to when we should really only be counting sucesses. Implement a success filter to properly perform the calculation. Scan for any missing logic for throughput as well. I am expecting some bottle neck behaviors when creating this many threads
+
+Good catch — that's a legitimate methodology fix. Mean response time should be over successful samples only, otherwise fast connection-refusals or 10 s timeouts distort it. And while I'm in there, the throughput metric has a related issue worth fixing, plus there's genuinely missing logic for surfacing the bottleneck behavior you're expecting. Let me look at the current calculations precisely.
+
+Read
+ChartGenerator.java
+(73–192, 189–258)
+This is a solid methodology fix. Here's my plan, and I found the "missing logic" you suspected:
+
+Mean response time → average elapsed over successful samples only (NaN if a cell had zero successes, so it's not plotted as a misleading 0).
+Throughput → the real gap: it currently counts failures too. Under a bottleneck, failures return fast (connection refused) or as fixed timeouts, so counting them inflates throughput and hides the collapse. I'll switch it to goodput — successful requests/sec over the test window — consistent with the latency fix.
+Missing entirely: an error-rate chart. Bottleneck behavior at 500 threads shows up primarily as errors, which nothing currently visualizes. I'll add errorrate.png.
+Let me implement. First RunStats:
+
+Edited
+ChartGenerator.java
++19
+-7
+Now the parse loop — accumulate successes separately and compute goodput + success-only mean:
+
+Edited
+ChartGenerator.java
++20
+-7
+Now refactor buildDataset to take a metric extractor (and skip NaN points), then wire up three charts in main. First the import:
+
+Edited
+ChartGenerator.java
++13
+-3
+Now main — three datasets/charts, updated console line and labels:
+
+Edited
+ChartGenerator.java
++13
+-9
+Now update writeSummaryCsv to include the successes column and clarify the semantics:
+
+
+Read and edited ChartGenerator.java
++8
+-4
+Now let me compile the updated ChartGenerator against JFreeChart and run it on the existing smoke-test results to verify it builds and produces all three charts:
+
+Compiled and ran updated ChartGenerator on smoke results
+The user ran the full sweep — and the corrected metrics now reveal exactly the bottleneck behavior they expected. This is a great validation of why the fix matters:
+
+Single-threaded hits a wall: 60.6% errors at 100 clients, 90.7% errors at 500. Its accept backlog overflows and JMeter connections time out. Crucially, old throughput would have counted those 995 failures and reported ~36 req/s at 500 clients — the goodput fix correctly shows only 3.4 successful req/s.
+Thread pool (50) plateaus at ~470–490 goodput with latency climbing (945 ms at 500) as its queue builds — the bounded-concurrency tradeoff, 0 errors.
+Thread-per-connection scaled cleanly to 4670 goodput at 500 on this hardware (no bottleneck here — a legitimate finding for this machine).
+
+Let me view the regenerated charts to confirm they render correctly:
+
+Read
+errorrate.png
+
+The error-rate chart renders perfectly and makes the single-threaded bottleneck unmistakable — flat 0% through 50 clients, then a cliff to 60% at 100 and 90% at 500, while the concurrent strategies stay at 0%. Let me confirm the goodput chart shows the corresponding collapse:
+
+Read
+throughput.png
+
+The goodput chart is exactly right: thread-per-connection scales to ~4670, thread-pool plateaus at ~490 (bounded by its 50 threads), and single-threaded flatlines near the bottom. All three charts compile and render correctly against your real full-sweep data.
+
+Let me update the README to document the success-based metrics and the new error chart.
+
+
+Read and edited README.md
++15
+-5
+Now update "Reading the results" to reflect the actual observed bottleneck:
+
+Edited
+README.md
++26
+-6
+
+Usage limit reached
+Try again
+
+All changes are complete and verified. Here's the summary of the metrics fix you asked for.
+
+What changed in ChartGenerator.java
+1. Mean response time — success filter (your request)
+Now averages elapsed over successful samples only. A cell with zero successes yields NaN and is left off the latency chart rather than drawn as a misleading 0.
+
+2. Throughput — the "missing logic" you suspected
+It was counting failures too. Since a saturated server fails fast (connection refused) or at a fixed timeout, counting those failures inflated throughput and hid the collapse. Switched to goodput = successful requests/sec over the test window — consistent with the latency fix.
+
+3. New errorrate.png chart
+Bottleneck behavior at high thread counts shows up primarily as errors, which nothing visualized before. Added a third chart (failed requests % vs clients).
+
+summary.csv gained a successes column and now reports goodputPerSec / meanRespMs.
+
+Verified against your real full-sweep data
+The fix's impact is dramatic exactly where you expected a bottleneck — single-threaded:
+
+clients	old throughput (all samples)	goodput (fixed)	error rate
+100	~10 req/s	3.9 req/s	61%
+500	~36 req/s ❌	3.4 req/s ✅	91%
+At 500 clients the old metric would have reported ~36 req/s when the server actually served only ~3.4 — because it was counting 995 failed connections. The accept backlog (default 50) overflows and connects time out. Thread-per-connection scaled cleanly to 4671 goodput; thread-pool plateaued at ~490 (bounded by its 50 threads) with rising latency. All three charts compile and render correctly (I viewed errorrate.png and throughput.png).
+
+The README's "Comparison graphs" and "Reading the results" sections now document the success-only methodology and the observed bottleneck.
+
+One note on your hardware: thread-per-connection did not bottleneck at 500 here (0 errors, 101 ms) — 500 threads is comfortable for this JVM. That's a legitimate finding; to force its bottleneck you'd need a much higher client count (the error-rate chart is where it would surface). Want me to add higher client counts (e.g. 1000/2000) to push thread-per-connection to its limit, or leave the sweep at the assignment's 5–500?
+
+on my throughput graphs the title reads as Echo Server goodput not throughput
+
+Got it — you'd rather see the conventional "Throughput" label. I'll rename the title (and the axis, for consistency), keeping the parenthetical so the success-based meaning stays clear.
+
+Edited
+ChartGenerator.java
++2
+-2
+Now let me recompile and regenerate the charts so throughput.png shows the corrected title:
+
+
+Ran a command, read throughput.png
+
+Fixed. The chart now reads "Echo Server Throughput vs. Concurrent Clients" with the axis labeled "Throughput (successful requests / second)" — conventional terminology, while the underlying value is still the success-filtered goodput we agreed on.
+
+throughput.png in serverTest/results/ is regenerated. The summary.csv column stays goodputPerSec (a precise column name is harmless in the data file), but if you'd prefer that renamed to throughputPerSec too for consistency, say the word and I'll change it.
+
+I need to also plot and generated data for a thread pool of 10 not just 50. This appears to be the only missing data left. Add in additional logic to generated this data and add it to the plots
+
+Good call — a second pool size (10 vs 50) really shows how pool sizing trades off throughput ceiling against queueing. I'll add it as its own series ("Thread pool (10)" alongside "Thread pool (50)"). This needs three coordinated changes: the driver generates both pool sizes, ChartGenerator recognizes/colors them, and the README reflects it.
+
+Let me start with ChartGenerator — strategy names, colors, and robust POOL<n> handling:
+
+Edited
+ChartGenerator.java
++28
+-4
+Now use displayName in the two places that formatted the strategy name:
+
+Edited
+ChartGenerator.java
++2
+-2
+Now the driver. Let me read the current param block and the strategy/sweep section:
+
+Read
+run_load_tests.ps1
+Let me read the param block start and the main sweep section:
+
+Read
+run_load_tests.ps1
+(33–37, 183–212)
+Let me read the outer sweep-loop header so I can restructure it:
+
+Read
+run_load_tests.ps1
+Now the driver changes. First the param block and results-dir resolution:
+
+
+Read and edited run_load_tests.ps1
++21
+-18
+Now let me verify. First compile the updated ChartGenerator:
+
+Compiled updated ChartGenerator
+Compiles. Now let me run the driver into a temp results dir (non-destructive to your real full-sweep results) with a tiny sweep, to confirm it generates the POOL10/POOL50 data and 4 series render:
+
+Ran driver into temp dir with two pool sizes
+The driver now generates POOL10_5.jtl and POOL50_5.jtl as separate series (exit 0). Now run the updated ChartGenerator on it and view the result to confirm four distinctly-colored, labeled series:
+
+Ran new ChartGenerator on temp results, show summary
+summary.csv now lists "Thread pool (10)" and "Thread pool (50)" as distinct series. Let me view the chart to confirm four distinctly-colored legend entries:
+
+Read
+throughput.png
+
+All four series render with distinct colors and correct legend names: Single-threaded (red), Thread-per-connection (blue), Thread pool (10) (green), Thread pool (50) (orange). (The chart looks sparse only because this quick test used a single client count of 5 — where pool-10, pool-50 and thread-per-connection all sit at ~44 req/s and overlap; the real 5-point sweep produces proper lines that diverge.)
+
+Let me clean up the temp dir and update the README references to pool sizing:
+
+
+Searched code, ran a command, edited README.md
++1
+-1
+Now let me update the sweep description and the results table to reflect both pool sizes. Let me read those sections:
+
+
+Read and edited README.md
++4
+-1
+Now the results table and the "Thread pool" bullet — add the pool-10 dimension:
+
+
+Read and edited README.md
++13
+-8
+All updated and verified end-to-end (non-destructively, in a temp dir). One last thing: so the driver's built-in chart step uses the new logic without requiring an Eclipse rebuild first, let me compile the current sources into the project's target/classes now:
+
+Recompile all sources into target/classes
+javac exit=0 — all sources compiled into target/classes (that error was just my Get-ChildItem syntax). Let me confirm the class landed:
+
+Confirmed compiled classes present
+All done and verified. Here's what changed to add the thread pool of 10 as its own series.
+
+Changes
+run_load_tests.ps1
+
+Replaced the single -PoolSize 50 with -PoolSizes 10,50 (an array — default runs both).
+The sweep now builds one run per pool size, writing POOL10_<clients>.jtl and POOL50_<clients>.jtl — each a distinct chart series.
+Bonus: added an optional -ResultsDir param (handy for test runs without clobbering your real results).
+ChartGenerator.java
+
+Recognizes POOL10 → "Thread pool (10)" and POOL50 → "Thread pool (50)", with a regex fallback so any POOL<n> is auto-labeled "Thread pool (n)".
+Added distinct colors (green for pool-10, orange for pool-50) and enough spares for more sizes.
+README.md — updated the sweep description, results table, and the pool-sizing discussion (pool-10 ceiling ≈100 req/s vs pool-50 ≈500).
+
+Verified
+ChartGenerator compiles against JFreeChart.
+Ran the real driver into a temp dir with -PoolSizes 10,50: produced POOL10_5.jtl + POOL50_5.jtl, and summary.csv/charts show four distinct, correctly-labeled series (I viewed the chart).
+Recompiled all sources into target/classes, so the driver's built-in chart step uses the new logic immediately.
+To regenerate your real charts
+Your current results/ still holds the old single-pool data. In a fresh terminal (so JMeter is on PATH), re-run:
+
+./run_load_tests.ps1
+It clears the old .jtls and produces the full sweep with both pool sizes, then regenerates throughput.png, latency.png, and errorrate.png — now with "Thread pool (10)" and "Thread pool (50)" lines. At 50+ clients you'll see pool-10 plateau around ~100 req/s while pool-50 climbs to ~500, which is exactly the pool-sizing tradeoff.
+
+When looking at the requirements I may have left a part out. The following question was asked
+
+Is there any Executor Service for Thread Per Connection? If not, use the original implementation and justify it
+
+After learning more about the executor service and the deciusion for the threadPerConnectionEchoServer to use a cached thread pool, I belive that the executor service does not have a service to create a thread per connection, While the cached thread pool may be a more optimal solution, it falls out of scope of the assignment. Chanct the NewThreadPerConnection server back to the original Dr.Donahoo methos with our added simulated overhead
+
+That's a well-reasoned reading of the assignment. You're right: java.util.concurrent.Executors has no thread-per-connection factory — newCachedThreadPool() reuses idle threads (keeps them ~60s) and newFixedThreadPool() bounds concurrency, so neither is truly "one fresh thread per connection." The sub-question is explicitly inviting you to keep Donahoo's original new Thread(...) and justify it. Let me revert that server (the overhead stays in the shared EchoProtocol).
+
+Updated
+ThreadPerConnectionEchoServer.java
++28
+-14
+Now update package-info.java, whose table claims this server uses newCachedThreadPool():
+
+Edited
+package-info.java
++11
+-6
+Now the README. Let me find the relevant mentions:
+
+Searched
+newCachedThreadPool|cached|ExecutorService|executor|accept-loop|hand each
+Let me read the top of the README to update the intro, table, and the explanatory paragraph:
+
+Read and edited README.md
++19
+-10
+Now let me recompile into target/classes and do a quick behavior check on the reverted server (echo + overhead + parallelism):
+
+Recompile and behavior-check reverted thread-per-connection server
+Compile is clean and the single client confirms echo + 124 ms overhead. But my 5-concurrent-client check was bogus — I forgot to quote the space-containing classpath in those Start-Process calls (the exact bug I fixed in the driver), so those clients errored instead of running. Let me redo the parallelism check correctly:
+
+Correct parallelism check for reverted thread-per-connection server
+Confirmed working: each of the 5 concurrent clients got its echo with ~133 ms round-trip, and all 5 finished in 288 ms (that's mostly 5 separate JVM client startups) — genuinely parallel, nowhere near the ~500 ms+ a serial server would take. The reverted server compiles, echoes, applies the 100 ms overhead, and spawns one thread per connection.
+
+Done — thread-per-connection reverted to Donahoo's original
+ThreadPerConnectionEchoServer.java now uses the classic accept loop:
+
+Socket clntSock = servSock.accept();
+Thread thread = new Thread(new EchoProtocol(clntSock, logger));
+thread.start();
+No ExecutorService. The class Javadoc carries the justification answering the assignment's sub-question: no Executors factory implements true thread-per-connection — newCachedThreadPool() reuses idle threads and newFixedThreadPool() bounds them — so the original raw-Thread implementation is the faithful choice. The 100 ms simulated overhead still lives in the shared EchoProtocol, unchanged, so all three servers do identical per-connection work.
+
+Docs updated to match:
+
+package-info.java — the strategy table now reads "raw new Thread(...) per connection (no executor exists for this)" and explains the exception.
+README.md — intro, strategy table, project-layout comment, and a new "Why thread-per-connection is not on an ExecutorService" paragraph.
+I recompiled everything into target/classes, so the driver uses the reverted server immediately.
+
+Nothing else needs to change: the server's external behavior (parallel, ~100 ms latency) is the same as the cached-pool version, so your existing THREADPERCONN chart data stays representative. If you want fresh charts, just re-run ./run_load_tests.ps1 — it'll pick up the recompiled server automatically. The net result: single-threaded and thread-pool use ExecutorService; thread-per-connection uses the original new Thread per the justified exception.
+
+

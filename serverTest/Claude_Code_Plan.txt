@@ -1,0 +1,145 @@
+# Echo Server Concurrency Strategies — Load Test & Comparison
+
+## Context
+
+ECE 696 assignment. Starting from Dr. Donahoo's *TCP/IP Sockets in Java* echo-server
+code, build a Maven/Eclipse project (in the empty `serverTest/` folder, sibling to the
+existing `Composite/` project) that:
+
+1. Implements an echo server that, on receiving **≥ 4 bytes**, sleeps **100 ms** to
+   **simulate per-request/connection overhead** and then closes the connection ("quit").
+2. Provides that server under **three concurrency strategies**: single-threaded,
+   thread-per-connection, and thread-pool — as **three fully separate classes** that
+   mirror Donahoo's `TCPEchoServer` / `TCPEchoServerThread` / `TCPEchoServerPool`.
+3. Puts the overhead in the shared **echo protocol** so all three strategies exercise it.
+4. **Converts every server to `ExecutorService`** (each strategy = a different executor).
+5. **Load-tests** with **Apache JMeter** at **5/10/50/100/500** concurrent clients.
+6. **Generates comparison graphs** (throughput & latency vs. client count, one line per
+   strategy, clear labels + legends) so the "best method per scenario" is visible.
+
+The point of the exercise: under the 100 ms overhead, the single-threaded server
+serializes connections (latency grows linearly with load), thread-per-connection
+parallelizes without bound (fast until thread-exhaustion), and the fixed pool bounds
+concurrency (best throughput/latency trade-off once saturated). The graphs make this
+visible.
+
+### Strategy → ExecutorService mapping (the reconciliation of reqs #2 and #4)
+
+| Strategy (separate class)        | Donahoo original      | ExecutorService                          |
+|----------------------------------|-----------------------|------------------------------------------|
+| `SingleThreadEchoServer`         | `TCPEchoServer`       | `Executors.newSingleThreadExecutor()`    |
+| `ThreadPerConnectionEchoServer`  | `TCPEchoServerThread` | `Executors.newCachedThreadPool()`        |
+| `ThreadPoolEchoServer`           | `TCPEchoServerPool`   | `Executors.newFixedThreadPool(n)`        |
+
+All three keep the classic `accept()` loop but hand each socket to their executor via
+`service.execute(new EchoProtocol(sock, logger))` instead of raw `new Thread(...)`.
+
+## Toolchain notes (verified this session)
+
+- **Java 26** is installed (project targets Java 17 bytecode, matching `Composite`).
+- **No `mvn` / no `jmeter` on PATH.** The established workflow (see `Composite/README.md`)
+  is **Eclipse import → m2e resolves dependencies on first build (needs internet once)**.
+  JMeter must be installed by the user to run the load tests.
+- Convention template = `Composite/`: groupId `edu.arizona.ece696`, Java 17,
+  JUnit 5, `exec-maven-plugin`, Eclipse metadata gitignored, README-driven.
+
+## Project layout (new, under `serverTest/`)
+
+```
+serverTest/
+├── pom.xml                      # groupId edu.arizona.ece696, artifactId echo-server-strategies
+├── .gitignore                   # mirror Composite (target/, Eclipse metadata, results/*.jtl)
+├── README.md                    # design, run steps, JMeter + charts, result interpretation
+├── src/main/java/edu/arizona/ece696/echo/
+│   ├── EchoProtocol.java              # SHARED Runnable; holds the 100ms/≥4-byte overhead
+│   ├── SingleThreadEchoServer.java    # newSingleThreadExecutor,  args: <port>
+│   ├── ThreadPerConnectionEchoServer.java  # newCachedThreadPool, args: <port>
+│   ├── ThreadPoolEchoServer.java      # newFixedThreadPool(n),    args: <port> <poolSize>
+│   ├── EchoClient.java                # simple smoke-test client (echo + timing)
+│   └── ChartGenerator.java            # reads JMeter JTLs -> throughput.png, latency.png, summary.csv
+│   └── package-info.java
+├── src/test/java/edu/arizona/ece696/echo/
+│   └── EchoProtocolTest.java          # JUnit 5: echo correctness + ~100ms overhead on ≥4 bytes
+├── jmeter/
+│   └── echo_load_test.jmx             # TCP Sampler plan, parameterized via __P(...)
+└── run_load_tests.ps1                 # driver: loops strategies × {5,10,50,100,500}, runs JMeter, then charts
+```
+
+## Implementation detail
+
+### `EchoProtocol` (shared, carries the overhead)
+Based verbatim on Donahoo's `EchoProtocol implements Runnable` (`handleEchoClient` +
+`run()`), with the overhead added inside the receive loop **after** echoing:
+
+```java
+while ((recvMsgSize = in.read(echoBuffer)) != -1) {
+    out.write(echoBuffer, 0, recvMsgSize);
+    out.flush();
+    totalBytesEchoed += recvMsgSize;
+    if (recvMsgSize >= 4) {                 // simulate overhead, then "quit"
+        try { Thread.sleep(100); }
+        catch (InterruptedException ex) { Thread.currentThread().interrupt(); }
+        break;
+    }
+}
+```
+Echo-first keeps normal echo semantics; the 100 ms models processing/teardown cost and
+the `break` closes the connection (the "quit" on ≥4 chars). Every strategy runs this same
+protocol, so overhead is identical across them and only the *concurrency* differs.
+
+### Three server classes
+Each is standalone (own `main`, own `accept()` loop, own executor per the table above),
+so the file set is recognizably the three textbook servers — just executor-based. Pool
+size for `ThreadPoolEchoServer` comes from `args[1]`. `java.util.logging` for logging,
+matching Donahoo.
+
+### `EchoClient`
+Minimal connect → send word → read echo until close → print round-trip time. For manual
+end-to-end verification without JMeter (also demonstrates the 100 ms delay).
+
+### JMeter plan `echo_load_test.jmx`
+- **TCP Sampler** (`TCPClientImpl`), **re-use connection = false / close = true** so each
+  sample is a fresh connection (models per-connection cost). No EOL byte → sampler reads
+  until the server closes the socket, which our protocol does after the overhead.
+- Send payload of ≥4 chars (e.g. `"quit"`) to trigger the overhead path.
+- Thread Group count = `${__P(clients)}`, plus `${__P(port)}`, `${__P(loops)}`,
+  `${__P(rampup)}`, `${__P(host,localhost)}` so one plan serves all runs.
+
+### `run_load_tests.ps1` (Windows-primary driver)
+For each of the 3 servers × clients ∈ {5,10,50,100,500}: start server
+(`java -cp target/classes <ServerClass> <port> [pool]`), run
+`jmeter -n -t jmeter/echo_load_test.jmx -Jclients=N -Jport=... -l results/<STRATEGY>_<N>.jtl`,
+stop the server, then finally run `ChartGenerator results/`. Fixed pool size chosen
+(e.g. 50) and documented. Assumes `jmeter` on PATH (README covers install).
+
+### `ChartGenerator` (JFreeChart)
+Reads every `results/*.jtl` (JMeter CSV: `elapsed`, `success`, `timeStamp`), infers
+`(strategy, clientCount)` from the filename, computes **throughput = samples / wall-time**,
+**mean latency**, and **error %**, writes `results/summary.csv`, and renders two
+`XYLineChart` PNGs (`throughput.png`, `latency.png`): X = client count (log scale),
+one series per strategy, titled axes + legend. JFreeChart added as a Maven dependency
+(m2e resolves it in Eclipse just like JUnit).
+
+### `pom.xml`
+Mirror `Composite/pom.xml`: Java 17 release, UTF-8, JUnit 5 + Surefire 3.x, exec plugin.
+Add `org.jfree:jfreechart` (latest 1.5.x). Optionally an exec-plugin execution id to run
+`ChartGenerator` conveniently.
+
+## Verification
+
+1. **Compile (JDK only, no Maven):** from `serverTest/`,
+   `javac -d out src/main/java/edu/arizona/ece696/echo/EchoProtocol.java <3 servers> EchoClient.java`
+   (ChartGenerator excluded here — it needs JFreeChart; verify it via Eclipse/m2e).
+2. **End-to-end echo + overhead:** start `SingleThreadEchoServer 5000`, run
+   `EchoClient localhost quit 5000` → echoes `quit`, round-trip ≈ ≥100 ms. Repeat against
+   `ThreadPoolEchoServer 5000 50`.
+3. **Concurrency contrast:** fire several concurrent clients at `SingleThreadEchoServer`
+   (latencies stack ~100 ms each) vs `ThreadPerConnectionEchoServer` (roughly flat) to
+   confirm strategy behavior before JMeter.
+4. **Unit test:** `EchoProtocolTest` asserts echo equality and that a ≥4-byte message
+   takes ≥100 ms (loopback sockets). Run via Eclipse JUnit or `mvn test` if Maven present.
+5. **Load test (JMeter installed):** run `run_load_tests.ps1`; confirm 15 JTLs land in
+   `results/` and `throughput.png` / `latency.png` / `summary.csv` are generated with
+   labeled axes and a legend distinguishing the three strategies.
+6. **Eclipse import check:** *Import ▸ Existing Maven Projects ▸ serverTest*; project
+   builds and `Main`/server classes run as Java Applications.
